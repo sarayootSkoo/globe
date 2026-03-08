@@ -949,11 +949,22 @@ export class GlobeRenderer {
   /**
    * Updates globe colors when the app theme toggles between dark and light.
    */
-  updateTheme(isDark: boolean): void {
-    // Wireframe color
+  updateTheme(isDarkOrTheme: boolean | string): void {
+    // Normalise legacy boolean calls to theme string
+    let themeName: string;
+    if (typeof isDarkOrTheme === 'boolean') {
+      themeName = isDarkOrTheme ? 'dark' : 'light';
+    } else {
+      themeName = isDarkOrTheme;
+    }
+
+    // Wireframe color per theme
+    const wireColors: Record<string, number> = {
+      dark: 0x00d4ff, light: 0x1e40af, fire: 0xff6a00, winter: 0x7ec8ff, galaxy: 0xb46aff,
+    };
     if (this.wireframe) {
       (this.wireframe.material as THREE.MeshBasicMaterial).color.setHex(
-        isDark ? 0x00d4ff : 0x1e40af,
+        wireColors[themeName] ?? 0x00d4ff,
       );
     }
 
@@ -969,19 +980,40 @@ export class GlobeRenderer {
         const y = posAttr.getY(i) / R; // normalise -1..1
         const t = (y + 1) / 2;        // 0..1
 
-        if (isDark) {
-          // Cyan top → purple bottom
+        if (themeName === 'fire') {
+          // Red-bottom → yellow-top gradient
           colors.push(
-            t * 0 + (1 - t) * 168 / 255,
-            t * 212 / 255 + (1 - t) * 85 / 255,
+            1,
+            t * 0.85 + (1 - t) * 0.15,
+            t * 0.1,
+          );
+        } else if (themeName === 'winter') {
+          // Deep blue bottom → white-blue top
+          colors.push(
+            t * 0.9 + (1 - t) * 0.2,
+            t * 0.95 + (1 - t) * 0.4,
             1,
           );
-        } else {
+        } else if (themeName === 'galaxy') {
+          // Purple bottom → pink-white top
+          colors.push(
+            t * 0.9 + (1 - t) * 0.5,
+            t * 0.4 + (1 - t) * 0.15,
+            t * 1.0 + (1 - t) * 0.8,
+          );
+        } else if (themeName === 'light') {
           // Blue gradient for light theme
           colors.push(
             t * 30  / 255,
             t * 64  / 255,
             175     / 255,
+          );
+        } else {
+          // Cyan top → purple bottom (dark default)
+          colors.push(
+            t * 0 + (1 - t) * 168 / 255,
+            t * 212 / 255 + (1 - t) * 85 / 255,
+            1,
           );
         }
       }

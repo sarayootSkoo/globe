@@ -7,6 +7,7 @@
   import Scanline from './components/background/Scanline.svelte';
   import Corners from './components/background/Corners.svelte';
   import ParticleCanvas from './components/background/ParticleCanvas.svelte';
+  import BorderMagic from './components/background/BorderMagic.svelte';
 
   // Banner
   import TopBanner from './components/banner/TopBanner.svelte';
@@ -71,6 +72,7 @@
 <!-- Background layers -->
 <Scanline />
 <ParticleCanvas />
+<BorderMagic />
 <Corners />
 
 {#if loaded}

@@ -1,5 +1,8 @@
 <script lang="ts">
   import * as globeStore from '../../lib/stores/globeState';
+  import * as fx from '../../lib/stores/themeEffects';
+  import { theme } from '../../lib/stores/appState';
+  import type { Theme } from '../../lib/stores/appState';
   import WasdPopup from '../wasd/WasdPopup.svelte';
 
   // ── Local reactive mirrors of store values ──────────────────────────────────
@@ -16,18 +19,62 @@
 
   let wasdPopupOpen = $state(false);
 
+  // ── Collapse state (persisted) ──────────────────────────────────────────────
+  import { safeGet, safeSet } from '../../lib/utils/storage';
+  let globeOpen = $state(safeGet<boolean>('ui.globeOpen', true));
+  let fxOpen    = $state(safeGet<boolean>('ui.fxOpen', true));
+
+  function toggleGlobeSection(): void {
+    globeOpen = !globeOpen;
+    safeSet('ui.globeOpen', globeOpen);
+  }
+  function toggleFxSection(): void {
+    fxOpen = !fxOpen;
+    safeSet('ui.fxOpen', fxOpen);
+  }
+
+  // ── Theme effect controls ──────────────────────────────────────────────────
+  let currentTheme = $state<Theme>('dark');
+  let fxDensityVal  = $state(100);   // 0–200 slider → 0–2
+  let fxSpeedVal    = $state(100);   // 25–300 slider → 0.25–3
+  let fxNebula      = $state(true);
+  let fxGlitter     = $state(true);
+  let fxShootStars  = $state(true);
+  let fxEmbers      = $state(true);
+  let fxSnowflakes  = $state(true);
+  let fxBgStars     = $state(true);
+  let fxBgMesh      = $state(true);
+  let fxBorder      = $state(true);
+  let fxBorderIntVal = $state(100);  // 20–200 → 0.2–2
+  let fxBorderSpdVal = $state(100);  // 25–300 → 0.25–3
+
   // ── Subscribe to stores ──────────────────────────────────────────────────────
   $effect(() => {
-    const u1 = globeStore.autoRotate.subscribe(v    => { autoRotate    = v; });
-    const u2 = globeStore.showWireframe.subscribe(v => { showWireframe = v; });
-    const u3 = globeStore.showDots.subscribe(v      => { showDots      = v; });
-    const u4 = globeStore.showLinks.subscribe(v     => { showLinks     = v; });
-    const u5 = globeStore.pulseEnabled.subscribe(v  => { pulseEnabled  = v; });
-    const u6 = globeStore.cometEnabled.subscribe(v  => { cometEnabled  = v; });
-    const u7 = globeStore.pulseSpeed.subscribe(v    => { pulseSpeedVal  = Math.round(v * 100); });
-    const u8 = globeStore.rotateSpeed.subscribe(v   => { rotateSpeedVal = Math.round(v * 100); });
-    const u9 = globeStore.zoomLevel.subscribe(v     => { zoomVal = v; });
-    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9(); };
+    const u1  = globeStore.autoRotate.subscribe(v    => { autoRotate    = v; });
+    const u2  = globeStore.showWireframe.subscribe(v => { showWireframe = v; });
+    const u3  = globeStore.showDots.subscribe(v      => { showDots      = v; });
+    const u4  = globeStore.showLinks.subscribe(v     => { showLinks     = v; });
+    const u5  = globeStore.pulseEnabled.subscribe(v  => { pulseEnabled  = v; });
+    const u6  = globeStore.cometEnabled.subscribe(v  => { cometEnabled  = v; });
+    const u7  = globeStore.pulseSpeed.subscribe(v    => { pulseSpeedVal  = Math.round(v * 100); });
+    const u8  = globeStore.rotateSpeed.subscribe(v   => { rotateSpeedVal = Math.round(v * 100); });
+    const u9  = globeStore.zoomLevel.subscribe(v     => { zoomVal = v; });
+    const u10 = theme.subscribe(v                    => { currentTheme = v; });
+    const u11 = fx.effectDensity.subscribe(v         => { fxDensityVal = Math.round(v * 100); });
+    const u12 = fx.effectSpeed.subscribe(v           => { fxSpeedVal = Math.round(v * 100); });
+    const u13 = fx.showNebula.subscribe(v            => { fxNebula = v; });
+    const u14 = fx.showGlitter.subscribe(v           => { fxGlitter = v; });
+    const u15 = fx.showShootingStars.subscribe(v     => { fxShootStars = v; });
+    const u16 = fx.showEmbers.subscribe(v            => { fxEmbers = v; });
+    const u17 = fx.showSnowflakes.subscribe(v        => { fxSnowflakes = v; });
+    const u18 = fx.showBgStars.subscribe(v           => { fxBgStars = v; });
+    const u19 = fx.showBgMesh.subscribe(v            => { fxBgMesh = v; });
+    const u20 = fx.borderEnabled.subscribe(v         => { fxBorder = v; });
+    const u21 = fx.borderIntensity.subscribe(v       => { fxBorderIntVal = Math.round(v * 100); });
+    const u22 = fx.borderSpeed.subscribe(v           => { fxBorderSpdVal = Math.round(v * 100); });
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9();
+                   u10(); u11(); u12(); u13(); u14(); u15(); u16(); u17(); u18(); u19();
+                   u20(); u21(); u22(); };
   });
 
   // ── Zoom display label ───────────────────────────────────────────────────────
@@ -98,11 +145,50 @@
   function handleCometToggle(): void {
     toggleComet();
   }
+
+  // ── Theme effect handlers ──────────────────────────────────────────────────
+  let fxDensityLabel = $derived(fxDensityVal + '%');
+  let fxSpeedLabel   = $derived(fxSpeedVal + '%');
+
+  // Which effects are relevant for the current theme
+  let isFireTheme   = $derived(currentTheme === 'fire');
+  let isWinterTheme = $derived(currentTheme === 'winter');
+  let isGalaxyTheme = $derived(currentTheme === 'galaxy');
+  let hasThemeEffects = $derived(isFireTheme || isWinterTheme || isGalaxyTheme);
+
+  function handleFxDensity(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.effectDensity.set(raw / 100);
+  }
+
+  function handleFxSpeed(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.effectSpeed.set(raw / 100);
+  }
+
+  let fxBorderIntLabel = $derived(fxBorderIntVal + '%');
+  let fxBorderSpdLabel = $derived(fxBorderSpdVal + '%');
+
+  function handleBorderIntensity(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.borderIntensity.set(raw / 100);
+  }
+
+  function handleBorderSpeed(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.borderSpeed.set(raw / 100);
+  }
 </script>
 
 <div class="panel" id="globe-controls">
-  <div class="panel-title">Globe Controls</div>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="panel-title section-header" onclick={toggleGlobeSection}>
+    <span>Globe Controls</span>
+    <span class="chevron" class:open={globeOpen}></span>
+  </div>
 
+  {#if globeOpen}
   <!-- Auto Rotate -->
   <div class="globe-ctrl-row">
     <span class="globe-ctrl-label">Auto Rotate</span>
@@ -256,6 +342,212 @@
       &#9000; WASD Controls
     </button>
   </div>
+  {/if}
+
+  <div class="divider"></div>
+
+  <!-- ── Theme Effects Section ──────────────────────────────────────────── -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="panel-title fx-title section-header" onclick={toggleFxSection}>
+    <span>Theme Effects</span>
+    <span class="chevron" class:open={fxOpen}></span>
+  </div>
+
+  {#if fxOpen}
+  <!-- Background Stars -->
+  <div class="globe-ctrl-row">
+    <span class="globe-ctrl-label">BG Stars</span>
+    <div
+      class="globe-toggle"
+      class:on={fxBgStars}
+      title="Toggle background star particles"
+      onclick={() => fx.showBgStars.update(v => !v)}
+      role="switch"
+      aria-checked={fxBgStars}
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && fx.showBgStars.update(v => !v)}
+    ></div>
+  </div>
+
+  <!-- Background Mesh -->
+  <div class="globe-ctrl-row">
+    <span class="globe-ctrl-label">BG Mesh</span>
+    <div
+      class="globe-toggle"
+      class:on={fxBgMesh}
+      title="Toggle background mesh grid"
+      onclick={() => fx.showBgMesh.update(v => !v)}
+      role="switch"
+      aria-checked={fxBgMesh}
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && fx.showBgMesh.update(v => !v)}
+    ></div>
+  </div>
+
+  <!-- Magic Border -->
+  <div class="globe-ctrl-row">
+    <span class="globe-ctrl-label">Border FX</span>
+    <div
+      class="globe-toggle"
+      class:on={fxBorder}
+      title="Toggle magic border glow effect"
+      onclick={() => fx.borderEnabled.update(v => !v)}
+      role="switch"
+      aria-checked={fxBorder}
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && fx.borderEnabled.update(v => !v)}
+    ></div>
+  </div>
+
+  {#if fxBorder}
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Border Glow</span>
+        <span class="globe-ctrl-label zoom-val">{fxBorderIntLabel}</span>
+      </div>
+      <input
+        type="range"
+        class="fx-density-slider"
+        min="20"
+        max="200"
+        value={fxBorderIntVal}
+        title="Border glow intensity"
+        oninput={handleBorderIntensity}
+      />
+    </div>
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Border Speed</span>
+        <span class="globe-ctrl-label zoom-val">{fxBorderSpdLabel}</span>
+      </div>
+      <input
+        type="range"
+        class="fx-speed-slider"
+        min="25"
+        max="300"
+        value={fxBorderSpdVal}
+        title="Border animation speed"
+        oninput={handleBorderSpeed}
+      />
+    </div>
+  {/if}
+
+  <div class="divider"></div>
+
+  <!-- Theme-specific toggles (only show when relevant) -->
+  {#if isFireTheme}
+    <div class="globe-ctrl-row">
+      <span class="globe-ctrl-label">Embers</span>
+      <div
+        class="globe-toggle"
+        class:on={fxEmbers}
+        title="Toggle fire ember particles"
+        onclick={() => fx.showEmbers.update(v => !v)}
+        role="switch"
+        aria-checked={fxEmbers}
+        tabindex="0"
+        onkeydown={(e) => e.key === 'Enter' && fx.showEmbers.update(v => !v)}
+      ></div>
+    </div>
+  {/if}
+
+  {#if isWinterTheme}
+    <div class="globe-ctrl-row">
+      <span class="globe-ctrl-label">Snowflakes</span>
+      <div
+        class="globe-toggle"
+        class:on={fxSnowflakes}
+        title="Toggle falling snowflakes"
+        onclick={() => fx.showSnowflakes.update(v => !v)}
+        role="switch"
+        aria-checked={fxSnowflakes}
+        tabindex="0"
+        onkeydown={(e) => e.key === 'Enter' && fx.showSnowflakes.update(v => !v)}
+      ></div>
+    </div>
+  {/if}
+
+  {#if isGalaxyTheme}
+    <div class="globe-ctrl-row">
+      <span class="globe-ctrl-label">Nebula</span>
+      <div
+        class="globe-toggle"
+        class:on={fxNebula}
+        title="Toggle nebula cloud layers"
+        onclick={() => fx.showNebula.update(v => !v)}
+        role="switch"
+        aria-checked={fxNebula}
+        tabindex="0"
+        onkeydown={(e) => e.key === 'Enter' && fx.showNebula.update(v => !v)}
+      ></div>
+    </div>
+
+    <div class="globe-ctrl-row">
+      <span class="globe-ctrl-label">Glitter</span>
+      <div
+        class="globe-toggle"
+        class:on={fxGlitter}
+        title="Toggle glitter sparkle effect"
+        onclick={() => fx.showGlitter.update(v => !v)}
+        role="switch"
+        aria-checked={fxGlitter}
+        tabindex="0"
+        onkeydown={(e) => e.key === 'Enter' && fx.showGlitter.update(v => !v)}
+      ></div>
+    </div>
+
+    <div class="globe-ctrl-row">
+      <span class="globe-ctrl-label">Comets</span>
+      <div
+        class="globe-toggle"
+        class:on={fxShootStars}
+        title="Toggle shooting star comets"
+        onclick={() => fx.showShootingStars.update(v => !v)}
+        role="switch"
+        aria-checked={fxShootStars}
+        tabindex="0"
+        onkeydown={(e) => e.key === 'Enter' && fx.showShootingStars.update(v => !v)}
+      ></div>
+    </div>
+  {/if}
+
+  <!-- Density slider (always visible when theme has effects) -->
+  {#if hasThemeEffects}
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Density</span>
+        <span class="globe-ctrl-label zoom-val">{fxDensityLabel}</span>
+      </div>
+      <input
+        type="range"
+        class="fx-density-slider"
+        min="10"
+        max="200"
+        value={fxDensityVal}
+        title="Particle density (10% = sparse, 200% = dense)"
+        oninput={handleFxDensity}
+      />
+    </div>
+
+    <!-- Speed slider -->
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Speed</span>
+        <span class="globe-ctrl-label zoom-val">{fxSpeedLabel}</span>
+      </div>
+      <input
+        type="range"
+        class="fx-speed-slider"
+        min="25"
+        max="300"
+        value={fxSpeedVal}
+        title="Effect speed (25% = slow-mo, 300% = fast)"
+        oninput={handleFxSpeed}
+      />
+    </div>
+  {/if}
+  {/if}
 </div>
 
 <!-- WASD popup lives here so it shares the cometEnabled state -->
@@ -295,6 +587,32 @@
     border-bottom: 1px solid var(--border);
     padding-bottom: 7px;
     margin-bottom: 10px;
+  }
+
+  /* Collapsible section header */
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s;
+  }
+  .section-header:hover {
+    color: var(--text);
+  }
+  .chevron {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid var(--accent);
+    transition: transform 0.25s ease;
+    transform: rotate(-90deg);
+  }
+  .chevron.open {
+    transform: rotate(0deg);
   }
 
   .globe-ctrl-row {
@@ -482,5 +800,82 @@
   .wasd-btn {
     width: 100%;
     text-align: center;
+  }
+
+  /* Theme Effects sub-title */
+  .fx-title {
+    margin-top: 2px;
+    margin-bottom: 8px;
+  }
+
+  .fx-slider-row {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  /* Density slider — orange */
+  .fx-density-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--text-dim) 0%, var(--orange) 100%);
+    outline: none;
+    cursor: pointer;
+    margin: 2px 0;
+  }
+  .fx-density-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--orange);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 5px var(--orange);
+    cursor: pointer;
+  }
+  .fx-density-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--orange);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 5px var(--orange);
+    cursor: pointer;
+  }
+
+  /* Speed slider — yellow */
+  .fx-speed-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--text-dim) 0%, var(--yellow) 100%);
+    outline: none;
+    cursor: pointer;
+    margin: 2px 0;
+  }
+  .fx-speed-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--yellow);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 5px var(--yellow);
+    cursor: pointer;
+  }
+  .fx-speed-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--yellow);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 5px var(--yellow);
+    cursor: pointer;
   }
 </style>

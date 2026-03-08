@@ -1,1 +1,6 @@
 node_modules/
+*/CLAUDE.md
+src/*/CLAUDE.md
+src/*/*/CLAUDE.md
+src/*/*/*/CLAUDE.md
+src/CLAUDE.md

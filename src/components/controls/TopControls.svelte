@@ -20,7 +20,13 @@
     document.documentElement.dataset.theme = currentTheme;
   });
 
-  let themeIcon = $derived(currentTheme === 'dark' ? '☽' : '☀');
+  const themeOptions: { value: Theme; label: string }[] = [
+    { value: 'dark',   label: '☽ Dark' },
+    { value: 'light',  label: '☀ Light' },
+    { value: 'fire',   label: '🔥 Fire' },
+    { value: 'winter', label: '❄ Winter' },
+    { value: 'galaxy', label: '🌌 Galaxy' },
+  ];
 
   let glowLabel = $derived((): string => {
     if (glow === 0) return 'FLAT';
@@ -32,9 +38,9 @@
   // Slider value is 0–100; store value is 0.0–1.0
   let sliderVal = $derived(Math.round(glow * 100));
 
-  function toggleTheme(): void {
-    const next: Theme = currentTheme === 'dark' ? 'light' : 'dark';
-    theme.set(next);
+  function handleThemeChange(e: Event): void {
+    const val = (e.target as HTMLSelectElement).value as Theme;
+    theme.set(val);
   }
 
   function handleGlowInput(e: Event): void {
@@ -62,14 +68,17 @@
     />
   </div>
 
-  <button
-    class="theme-btn"
-    id="theme-toggle"
-    title="Toggle dark/light"
-    onclick={toggleTheme}
+  <select
+    class="ctrl-select theme-select"
+    id="theme-select"
+    title="Choose theme"
+    onchange={handleThemeChange}
+    value={currentTheme}
   >
-    {themeIcon}
-  </button>
+    {#each themeOptions as opt}
+      <option value={opt.value} selected={opt.value === currentTheme}>{opt.label}</option>
+    {/each}
+  </select>
 </div>
 
 <style>
@@ -104,6 +113,15 @@
   :global([data-theme="light"]) .ctrl-select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%231e40af'/%3E%3C/svg%3E");
   }
+  :global([data-theme="fire"]) .ctrl-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23ff6a00'/%3E%3C/svg%3E");
+  }
+  :global([data-theme="winter"]) .ctrl-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237ec8ff'/%3E%3C/svg%3E");
+  }
+  :global([data-theme="galaxy"]) .ctrl-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23b46aff'/%3E%3C/svg%3E");
+  }
   .ctrl-select:hover {
     border-color: var(--accent);
   }
@@ -115,23 +133,20 @@
     background: #fff;
     color: #1e293b;
   }
-  .theme-btn {
-    background: var(--panel-bg);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    width: 34px;
-    height: 34px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 16px;
-    line-height: 1;
+  :global([data-theme="fire"]) .ctrl-select option {
+    background: #140802;
+    color: #ffe0c0;
   }
-  .theme-btn:hover {
-    border-color: var(--accent);
+  :global([data-theme="winter"]) .ctrl-select option {
+    background: #081428;
+    color: #d0e8ff;
+  }
+  :global([data-theme="galaxy"]) .ctrl-select option {
+    background: #0c041c;
+    color: #e0d0ff;
+  }
+  .theme-select {
+    min-width: 100px;
   }
   .glow-ctrl {
     display: flex;

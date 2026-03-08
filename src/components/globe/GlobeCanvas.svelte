@@ -107,7 +107,7 @@
 
     // ── React to theme changes ──────────────────────────────────────────────
     const unsubTheme = theme.subscribe(t => {
-      renderer?.updateTheme(t === 'dark');
+      renderer?.updateTheme(t);
     });
 
     // ── React to autoRotate store ────────────────────────────────────────────
