@@ -83,7 +83,7 @@ function collectMdFiles(dir, rootDir, results = []) {
     const isFile = entry.isFile() || (entry.isSymbolicLink() && fs.statSync(fullPath).isFile());
     if (isDir) {
       collectMdFiles(fullPath, rootDir, results);
-    } else if (isFile && entry.name.endsWith('.md')) {
+    } else if (isFile && entry.name.endsWith('.md') && entry.name !== 'CLAUDE.md') {
       results.push(fullPath);
     }
   }
