@@ -29,10 +29,10 @@ export const theme = writable<Theme>('dark');
 export const glowLevel = writable<number>(0.35);
 
 /**
- * Set of category keys that are currently visible/active in the legend.
- * Initialized with all known category keys so everything is visible on load.
+ * Set of category keys selected by the user for filtering (click-in / click-out).
+ * Empty Set = show all (no filter active). Non-empty = show only selected categories.
  */
-export const activeCats = writable<Set<string>>(new Set(Object.keys(CATEGORIES)));
+export const activeCats = writable<Set<string>>(new Set());
 
 /**
  * Node IDs selected for path-finding. First element is source, second is target.

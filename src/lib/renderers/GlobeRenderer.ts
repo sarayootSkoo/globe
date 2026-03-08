@@ -1108,15 +1108,16 @@ export class GlobeRenderer {
   }
 
   /**
-   * Grays out nodes whose category is NOT in `activeCats`.
-   * Also adjusts link opacity to match.
+   * Click-in/click-out filter: empty Set = show all, non-empty = show only selected.
+   * Grays out non-matching nodes and adjusts link opacity.
    */
   filterCategories(activeCats: Set<string>): void {
     const GRAY = 0x3a3a3a;
     const gl = this._glowLevel;
+    const showAll = activeCats.size === 0;
 
     this.nodeMeshes.forEach(({ data, mat, glowMat, mesh, baseRadius }) => {
-      const active = activeCats.has(data.cat);
+      const active = showAll || activeCats.has(data.cat);
       const br = (baseRadius || 6) * 2;
 
       if (active) {
@@ -1144,8 +1145,10 @@ export class GlobeRenderer {
       const tid = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
       const sn = nodeMap.get(sid);
       const tn = nodeMap.get(tid);
+      const srcActive = showAll || (sn && activeCats.has(sn.cat));
+      const tgtActive = showAll || (tn && activeCats.has(tn.cat));
       (line.material as THREE.LineBasicMaterial).opacity =
-        sn && tn && activeCats.has(sn.cat) && activeCats.has(tn.cat) ? 0.07 : 0.005;
+        sn && tn && srcActive && tgtActive ? 0.07 : 0.005;
     });
   }
 

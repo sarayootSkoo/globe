@@ -5,7 +5,7 @@
   import type { GraphNode } from '../../lib/types';
 
   let nodes = $state<GraphNode[]>([]);
-  let active = $state<Set<string>>(new Set(Object.keys(CATEGORIES)));
+  let active = $state<Set<string>>(new Set());
 
   $effect(() => {
     const unsub = graphNodes.subscribe(v => { nodes = v; });
@@ -39,7 +39,7 @@
   {#each Object.entries(CATEGORIES) as [key, cat]}
     <div
       class="legend-item"
-      class:dimmed={!active.has(key)}
+      class:dimmed={active.size > 0 && !active.has(key)}
       onclick={() => toggleCat(key)}
       role="button"
       tabindex="0"

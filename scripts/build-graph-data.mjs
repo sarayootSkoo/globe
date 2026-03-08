@@ -54,8 +54,8 @@ function detectCategory(filePath, rootDir) {
   if (first === 'decisions' || first === 'decision') return 'decisions';
   if (first === 'discussion' || first === 'discussions') return 'discussion';
   if (first.startsWith('oms-order')) return 'oms-order';
+  if (first === 'oms-help' || first.startsWith('oms-webapp-help')) return 'oms-help';
   if (first.startsWith('oms-webapp') || first.startsWith('oms-fe')) return 'oms-webapp';
-  if (first === 'oms-help') return 'oms-help';
   if (first === '.claude' || first === 'scripts' || first === 'meta') return 'meta';
 
   // File name hints
@@ -78,9 +78,12 @@ function collectMdFiles(dir, rootDir, results = []) {
     if (SKIP_DIRS.has(entry.name)) continue;
 
     const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
+    // Follow symlinks by stat-ing the resolved path
+    const isDir = entry.isDirectory() || (entry.isSymbolicLink() && fs.statSync(fullPath).isDirectory());
+    const isFile = entry.isFile() || (entry.isSymbolicLink() && fs.statSync(fullPath).isFile());
+    if (isDir) {
       collectMdFiles(fullPath, rootDir, results);
-    } else if (entry.isFile() && entry.name.endsWith('.md')) {
+    } else if (isFile && entry.name.endsWith('.md')) {
       results.push(fullPath);
     }
   }
