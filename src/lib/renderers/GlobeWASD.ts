@@ -38,11 +38,11 @@ export class GlobeWASD {
     this.state = {
       keys: { w: false, a: false, s: false, d: false, q: false, shift: false },
       speed: 0,
-      maxSpeed: 1,       // 1.0 maps to 500 km/h display
-      accelRate: 0.4,    // normal acceleration per second
-      boostRate: 1.2,    // shift-boost acceleration per second
-      brakeRate: 1.5,    // Q-key brake deceleration per second
-      friction: 0.3,     // natural deceleration when no keys held
+      maxSpeed: 4,       // 4.0 maps to 2000 km/h display
+      accelRate: 1.6,    // normal acceleration per second (4x)
+      boostRate: 4.8,    // shift-boost acceleration per second (4x)
+      brakeRate: 6.0,    // Q-key brake deceleration per second (4x)
+      friction: 1.2,     // natural deceleration when no keys held (4x)
       rotX: 0,           // accumulated pitch rotation velocity
       rotY: 0,           // accumulated yaw rotation velocity
       active: false,
@@ -156,7 +156,7 @@ export class GlobeWASD {
       this.controls.autoRotate = false;
 
       // Rotation magnitude: non-linear (speed² feels like acceleration)
-      const rotMag = this.state.speed * this.state.speed * 1.8 * dt;
+      const rotMag = this.state.speed * this.state.speed * 0.45 * dt;
 
       const camPos = this.camera.position.clone();
       const forward = camPos.clone().normalize(); // center → camera direction
@@ -210,7 +210,7 @@ export class GlobeWASD {
 
   // ── Computed helpers ─────────────────────────────────────────────────────────
 
-  /** Current speed mapped to km/h display value (0–500) */
+  /** Current speed mapped to km/h display value (0–2000) */
   get speedKmh(): number {
     return Math.round(this.state.speed * 500);
   }

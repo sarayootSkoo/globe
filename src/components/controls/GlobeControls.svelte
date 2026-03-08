@@ -48,8 +48,14 @@
   let fxLightning   = $state(true);
   let fxElecArcs    = $state(true);
   let fxPlasmaAura  = $state(true);
-  let fxElecArcIntVal = $state(100); // 20–200 → 0.2–2
-  let fxElecArcSpdVal = $state(100); // 25–300 → 0.25–3
+  let fxElecArcIntVal   = $state(100); // 20–300 → 0.2–3
+  let fxElecArcSpdVal   = $state(100); // 25–300 → 0.25–3
+  let fxElecArcCntVal   = $state(100); // 20–300 → 0.2–3
+  let fxElecOrbitSpdVal = $state(100); // 25–300 → 0.25–3
+  let fxElecCoreGlowVal = $state(100); // 20–300 → 0.2–3
+  let fxSparkBurst  = $state(true);
+  let fxSparkIntVal = $state(100);    // 20–300 → 0.2–3
+  let fxSparkRateVal = $state(100);   // 25–300 → 0.25–3
   let fxBorder      = $state(true);
   let fxBorderIntVal = $state(100);  // 20–200 → 0.2–2
   let fxBorderSpdVal = $state(100);  // 25–300 → 0.25–3
@@ -79,6 +85,12 @@
     const u25 = fx.showPlasmaAura.subscribe(v        => { fxPlasmaAura = v; });
     const u26 = fx.electricArcIntensity.subscribe(v  => { fxElecArcIntVal = Math.round(v * 100); });
     const u27 = fx.electricArcSpeed.subscribe(v      => { fxElecArcSpdVal = Math.round(v * 100); });
+    const u29 = fx.electricArcCount.subscribe(v      => { fxElecArcCntVal = Math.round(v * 100); });
+    const u30 = fx.electricOrbitSpeed.subscribe(v    => { fxElecOrbitSpdVal = Math.round(v * 100); });
+    const u31 = fx.electricCoreGlow.subscribe(v      => { fxElecCoreGlowVal = Math.round(v * 100); });
+    const u32 = fx.showSparkBurst.subscribe(v        => { fxSparkBurst = v; });
+    const u33 = fx.sparkBurstIntensity.subscribe(v   => { fxSparkIntVal = Math.round(v * 100); });
+    const u34 = fx.sparkBurstRate.subscribe(v        => { fxSparkRateVal = Math.round(v * 100); });
     const u18 = fx.showBgStars.subscribe(v           => { fxBgStars = v; });
     const u19 = fx.showBgMesh.subscribe(v            => { fxBgMesh = v; });
     const u20 = fx.borderEnabled.subscribe(v         => { fxBorder = v; });
@@ -86,7 +98,8 @@
     const u22 = fx.borderSpeed.subscribe(v           => { fxBorderSpdVal = Math.round(v * 100); });
     return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9();
                    u10(); u11(); u12(); u13(); u14(); u15(); u16(); u17(); u18(); u19();
-                   u20(); u21(); u22(); u23(); u24(); u25(); u26(); u27(); u28(); };
+                   u20(); u21(); u22(); u23(); u24(); u25(); u26(); u27(); u28();
+                   u29(); u30(); u31(); u32(); u33(); u34(); };
   });
 
   // ── Zoom display label ───────────────────────────────────────────────────────
@@ -184,8 +197,13 @@
     fx.effectSpeed.set(raw / 100);
   }
 
-  let fxElecArcIntLabel = $derived(fxElecArcIntVal + '%');
-  let fxElecArcSpdLabel = $derived(fxElecArcSpdVal + '%');
+  let fxElecArcIntLabel   = $derived(fxElecArcIntVal + '%');
+  let fxElecArcSpdLabel   = $derived(fxElecArcSpdVal + '%');
+  let fxElecArcCntLabel   = $derived(fxElecArcCntVal + '%');
+  let fxElecOrbitSpdLabel = $derived(fxElecOrbitSpdVal + '%');
+  let fxElecCoreGlowLabel = $derived(fxElecCoreGlowVal + '%');
+  let fxSparkIntLabel    = $derived(fxSparkIntVal + '%');
+  let fxSparkRateLabel   = $derived(fxSparkRateVal + '%');
   let fxBorderIntLabel = $derived(fxBorderIntVal + '%');
   let fxBorderSpdLabel = $derived(fxBorderSpdVal + '%');
 
@@ -197,6 +215,31 @@
   function handleElecArcSpeed(e: Event): void {
     const raw = parseInt((e.target as HTMLInputElement).value, 10);
     fx.electricArcSpeed.set(raw / 100);
+  }
+
+  function handleElecArcCount(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.electricArcCount.set(raw / 100);
+  }
+
+  function handleElecOrbitSpeed(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.electricOrbitSpeed.set(raw / 100);
+  }
+
+  function handleElecCoreGlow(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.electricCoreGlow.set(raw / 100);
+  }
+
+  function handleSparkIntensity(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.sparkBurstIntensity.set(raw / 100);
+  }
+
+  function handleSparkRate(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.sparkBurstRate.set(raw / 100);
   }
 
   function handleBorderIntensity(e: Event): void {
@@ -456,10 +499,10 @@
       <input
         type="range"
         class="fx-density-slider"
-        min="20"
-        max="200"
+        min="0"
+        max="2000"
         value={fxBorderIntVal}
-        title="Border glow intensity"
+        title="Border glow intensity (0% = off, 2000% = extreme)"
         oninput={handleBorderIntensity}
       />
     </div>
@@ -471,8 +514,8 @@
       <input
         type="range"
         class="fx-speed-slider"
-        min="25"
-        max="300"
+        min="0"
+        max="2000"
         value={fxBorderSpdVal}
         title="Border animation speed"
         oninput={handleBorderSpeed}
@@ -602,38 +645,137 @@
       ></div>
     </div>
 
-    {#if fxElecArcs || fxPlasmaAura}
+    <div class="globe-ctrl-row">
+      <span class="globe-ctrl-label">Spark Burst</span>
+      <div
+        class="globe-toggle"
+        class:on={fxSparkBurst}
+        title="Toggle radial lightning spark burst"
+        onclick={() => fx.showSparkBurst.update(v => !v)}
+        role="switch"
+        aria-checked={fxSparkBurst}
+        tabindex="0"
+        onkeydown={(e) => e.key === 'Enter' && fx.showSparkBurst.update(v => !v)}
+      ></div>
+    </div>
+
+    {#if fxSparkBurst}
       <div class="globe-ctrl-row fx-slider-row">
         <div class="zoom-header">
-          <span class="globe-ctrl-label">Arc Glow</span>
-          <span class="globe-ctrl-label zoom-val">{fxElecArcIntLabel}</span>
+          <span class="globe-ctrl-label">Spark Power</span>
+          <span class="globe-ctrl-label zoom-val">{fxSparkIntLabel}</span>
         </div>
         <input
           type="range"
           class="fx-density-slider"
-          min="20"
-          max="200"
-          value={fxElecArcIntVal}
-          title="Electric arc brightness (20% = faint, 200% = bright)"
-          oninput={handleElecArcIntensity}
+          min="0"
+          max="2000"
+          value={fxSparkIntVal}
+          title="Spark burst bolt count & brightness (0% = off, 2000% = extreme)"
+          oninput={handleSparkIntensity}
         />
       </div>
       <div class="globe-ctrl-row fx-slider-row">
         <div class="zoom-header">
-          <span class="globe-ctrl-label">Arc Speed</span>
-          <span class="globe-ctrl-label zoom-val">{fxElecArcSpdLabel}</span>
+          <span class="globe-ctrl-label">Spark Rate</span>
+          <span class="globe-ctrl-label zoom-val">{fxSparkRateLabel}</span>
         </div>
         <input
           type="range"
           class="fx-speed-slider"
-          min="25"
-          max="300"
-          value={fxElecArcSpdVal}
-          title="Arc animation speed (25% = slow, 300% = fast)"
-          oninput={handleElecArcSpeed}
+          min="0"
+          max="2000"
+          value={fxSparkRateVal}
+          title="Spark burst pulse frequency (0% = off, 2000% = rapid-fire)"
+          oninput={handleSparkRate}
         />
       </div>
     {/if}
+
+    <!-- Arc Glow -->
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Arc Glow</span>
+        <span class="globe-ctrl-label zoom-val">{fxElecArcIntLabel}</span>
+      </div>
+      <input
+        type="range"
+        class="fx-density-slider"
+        min="0"
+        max="2000"
+        value={fxElecArcIntVal}
+        title="Electric arc brightness (0% = off, 2000% = extreme)"
+        oninput={handleElecArcIntensity}
+      />
+    </div>
+
+    <!-- Arc Speed -->
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Arc Speed</span>
+        <span class="globe-ctrl-label zoom-val">{fxElecArcSpdLabel}</span>
+      </div>
+      <input
+        type="range"
+        class="fx-speed-slider"
+        min="0"
+        max="2000"
+        value={fxElecArcSpdVal}
+        title="Arc animation speed (0% = frozen, 2000% = extreme)"
+        oninput={handleElecArcSpeed}
+      />
+    </div>
+
+    <!-- Arc Count -->
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Arc Count</span>
+        <span class="globe-ctrl-label zoom-val">{fxElecArcCntLabel}</span>
+      </div>
+      <input
+        type="range"
+        class="fx-density-slider"
+        min="0"
+        max="2000"
+        value={fxElecArcCntVal}
+        title="Number of electric arcs & orbit rings (0% = none, 2000% = extreme)"
+        oninput={handleElecArcCount}
+      />
+    </div>
+
+    <!-- Orbit Speed -->
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Orbit Speed</span>
+        <span class="globe-ctrl-label zoom-val">{fxElecOrbitSpdLabel}</span>
+      </div>
+      <input
+        type="range"
+        class="fx-speed-slider"
+        min="0"
+        max="2000"
+        value={fxElecOrbitSpdVal}
+        title="Energy ring orbit rotation speed (0% = frozen, 2000% = extreme)"
+        oninput={handleElecOrbitSpeed}
+      />
+    </div>
+
+    <!-- Core Glow -->
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Core Glow</span>
+        <span class="globe-ctrl-label zoom-val">{fxElecCoreGlowLabel}</span>
+      </div>
+      <input
+        type="range"
+        class="fx-density-slider"
+        min="0"
+        max="2000"
+        value={fxElecCoreGlowVal}
+        title="Central energy core brightness (0% = off, 2000% = extreme)"
+        oninput={handleElecCoreGlow}
+      />
+    </div>
   {/if}
 
   <!-- Density slider (always visible when theme has effects) -->
@@ -646,10 +788,10 @@
       <input
         type="range"
         class="fx-density-slider"
-        min="10"
-        max="200"
+        min="0"
+        max="2000"
         value={fxDensityVal}
-        title="Particle density (10% = sparse, 200% = dense)"
+        title="Particle density (0% = off, 2000% = extreme)"
         oninput={handleFxDensity}
       />
     </div>
@@ -663,10 +805,10 @@
       <input
         type="range"
         class="fx-speed-slider"
-        min="25"
-        max="300"
+        min="0"
+        max="2000"
         value={fxSpeedVal}
-        title="Effect speed (25% = slow-mo, 300% = fast)"
+        title="Effect speed (0% = frozen, 2000% = extreme)"
         oninput={handleFxSpeed}
       />
     </div>

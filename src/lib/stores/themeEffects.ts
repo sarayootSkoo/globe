@@ -26,8 +26,16 @@ export const showLightning = writable<boolean>(true);
 /** Electric globe-specific effects */
 export const showElectricArcs = writable<boolean>(true);
 export const showPlasmaAura = writable<boolean>(true);
-export const electricArcIntensity = writable<number>(1);  // 0.2–2
+export const electricArcIntensity = writable<number>(1);  // 0.2–3
 export const electricArcSpeed = writable<number>(1);       // 0.25–3
+export const electricArcCount = writable<number>(1);       // 0.2–3 arc/ring count multiplier
+export const electricOrbitSpeed = writable<number>(1);     // 0.25–3 orbit ring rotation speed
+export const electricCoreGlow = writable<number>(1);       // 0.2–3 core glow intensity
+
+/** Spark burst — radial lightning discharge from globe center */
+export const showSparkBurst = writable<boolean>(true);
+export const sparkBurstIntensity = writable<number>(1);   // 0.2–3 bolt brightness + count
+export const sparkBurstRate = writable<number>(1);         // 0.25–3 pulse frequency
 
 /** Background stars (shared across all themes) */
 export const showBgStars = writable<boolean>(true);

@@ -128,6 +128,24 @@
     const unsubElecSpd = fx.electricArcSpeed.subscribe(v => {
       electricArcs?.setSpeed(v);
     });
+    const unsubElecCnt = fx.electricArcCount.subscribe(v => {
+      electricArcs?.setArcCount(v);
+    });
+    const unsubElecOrbit = fx.electricOrbitSpeed.subscribe(v => {
+      electricArcs?.setOrbitSpeed(v);
+    });
+    const unsubElecCore = fx.electricCoreGlow.subscribe(v => {
+      electricArcs?.setCoreGlow(v);
+    });
+    const unsubSparkBurst = fx.showSparkBurst.subscribe(v => {
+      electricArcs?.setShowSparkBurst(v);
+    });
+    const unsubSparkInt = fx.sparkBurstIntensity.subscribe(v => {
+      electricArcs?.setSparkIntensity(v);
+    });
+    const unsubSparkRate = fx.sparkBurstRate.subscribe(v => {
+      electricArcs?.setSparkRate(v);
+    });
 
     // ── React to autoRotate store ────────────────────────────────────────────
     const unsubAutoRotate = globeStore.autoRotate.subscribe(v => {
@@ -242,6 +260,12 @@
       unsubPlasmaAura();
       unsubElecInt();
       unsubElecSpd();
+      unsubElecCnt();
+      unsubElecOrbit();
+      unsubElecCore();
+      unsubSparkBurst();
+      unsubSparkInt();
+      unsubSparkRate();
       document.removeEventListener('kg:flyto', handleFlyTo);
     };
   });

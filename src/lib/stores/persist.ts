@@ -63,9 +63,9 @@ function buildEntries(): PersistEntry<any>[] {
     num(globe.zoomLevel,      'globe.zoom',        55,   10, 100),
     num(globe.globeOpacity,   'globe.opacity',     1,    0.1, 1),
 
-    // Theme effects
-    num(fx.effectDensity, 'fx.density', 1,    0.1, 2),
-    num(fx.effectSpeed,   'fx.speed',   1,    0.25, 3),
+    // Theme effects (all numeric: 0–20 range covers 0%–2000%)
+    num(fx.effectDensity, 'fx.density', 1,    0, 20),
+    num(fx.effectSpeed,   'fx.speed',   1,    0, 20),
     bool(fx.showNebula,       'fx.nebula',     true),
     bool(fx.showGlitter,      'fx.glitter',    true),
     bool(fx.showShootingStars,'fx.shootStars', true),
@@ -74,15 +74,21 @@ function buildEntries(): PersistEntry<any>[] {
     bool(fx.showLightning,    'fx.lightning',  true),
     bool(fx.showElectricArcs, 'fx.elecArcs',   true),
     bool(fx.showPlasmaAura,   'fx.plasmaAura', true),
-    num(fx.electricArcIntensity, 'fx.elecArcInt', 1, 0.2, 2),
-    num(fx.electricArcSpeed,     'fx.elecArcSpd', 1, 0.25, 3),
+    num(fx.electricArcIntensity, 'fx.elecArcInt',   1, 0, 20),
+    num(fx.electricArcSpeed,     'fx.elecArcSpd',   1, 0, 20),
+    num(fx.electricArcCount,     'fx.elecArcCnt',   1, 0, 20),
+    num(fx.electricOrbitSpeed,   'fx.elecOrbitSpd', 1, 0, 20),
+    num(fx.electricCoreGlow,     'fx.elecCoreGlow', 1, 0, 20),
+    bool(fx.showSparkBurst,      'fx.sparkBurst',  true),
+    num(fx.sparkBurstIntensity,  'fx.sparkInt',    1, 0, 20),
+    num(fx.sparkBurstRate,       'fx.sparkRate',   1, 0, 20),
     bool(fx.showBgStars,      'fx.bgStars',    true),
     bool(fx.showBgMesh,       'fx.bgMesh',     true),
 
     // Border effect
     bool(fx.borderEnabled,    'fx.border',         true),
-    num(fx.borderIntensity,   'fx.borderIntensity', 1,   0.2, 2),
-    num(fx.borderSpeed,       'fx.borderSpeed',     1,   0.25, 3),
+    num(fx.borderIntensity,   'fx.borderIntensity', 1,   0, 20),
+    num(fx.borderSpeed,       'fx.borderSpeed',     1,   0, 20),
   ];
 }
 
