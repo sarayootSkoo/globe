@@ -6,6 +6,7 @@
   import WasdPopup from '../wasd/WasdPopup.svelte';
   import PresetSystem from './PresetSystem.svelte';
   import ScreenshotBtn from './ScreenshotBtn.svelte';
+  import { audioEnabled, audioBass, audioMid, audioHigh, audioSensitivity, toggleAudio } from '../../lib/stores/audioReactive';
 
   // ── Local reactive mirrors of store values ──────────────────────────────────
   let autoRotate   = $state(true);
@@ -23,6 +24,13 @@
   let tourSpeedVal    = $state(100);  // raw slider value 10–500 → 0.1–5
 
   let wasdPopupOpen = $state(false);
+
+  // Audio reactive
+  let audioOn = $state(false);
+  let bassLvl = $state(0);
+  let midLvl = $state(0);
+  let highLvl = $state(0);
+  let audioSensVal = $state(100);
 
   // ── Collapse state (persisted) ──────────────────────────────────────────────
   import { safeGet, safeSet } from '../../lib/utils/storage';
@@ -73,6 +81,12 @@
   let fxBhHeightVal  = $state(100);   // 0–2000 → 0–20
   let fxBhHueVal     = $state(280);   // 0–360 raw
 
+  // Bloom (post-processing) controls
+  let fxBloom        = $state(false);
+  let fxBloomStrVal  = $state(100);   // 0–500 → 0–5
+  let fxBloomRadVal  = $state(40);    // 0–200 → 0–2
+  let fxBloomThrVal  = $state(30);    // 0–100 → 0–1
+
   // ── Subscribe to stores ──────────────────────────────────────────────────────
   $effect(() => {
     const u1  = globeStore.autoRotate.subscribe(v    => { autoRotate    = v; });
@@ -87,6 +101,11 @@
     const u28 = globeStore.globeOpacity.subscribe(v  => { opacityVal = Math.round(v * 100); });
     const u35 = globeStore.dotBrightness.subscribe(v => { dotBrightVal = Math.round(v * 100); });
     const u43 = globeStore.tourSpeed.subscribe(v      => { tourSpeedVal = Math.round(v * 100); });
+    const u44 = audioEnabled.subscribe(v               => { audioOn = v; });
+    const u45 = audioBass.subscribe(v                   => { bassLvl = v; });
+    const u46 = audioMid.subscribe(v                    => { midLvl = v; });
+    const u47 = audioHigh.subscribe(v                   => { highLvl = v; });
+    const u48 = audioSensitivity.subscribe(v            => { audioSensVal = Math.round(v * 100); });
     const u10 = theme.subscribe(v                    => { currentTheme = v; });
     const u11 = fx.effectDensity.subscribe(v         => { fxDensityVal = Math.round(v * 100); });
     const u12 = fx.effectSpeed.subscribe(v           => { fxSpeedVal = Math.round(v * 100); });
@@ -118,11 +137,16 @@
     const u40 = fx.blackholeWidth.subscribe(v        => { fxBhWidthVal = Math.round(v * 100); });
     const u41 = fx.blackholeHeight.subscribe(v       => { fxBhHeightVal = Math.round(v * 100); });
     const u42 = fx.blackholeHue.subscribe(v          => { fxBhHueVal = Math.round(v); });
+    const u49 = fx.bloomEnabled.subscribe(v          => { fxBloom = v; });
+    const u50 = fx.bloomStrength.subscribe(v         => { fxBloomStrVal = Math.round(v * 100); });
+    const u51 = fx.bloomRadius.subscribe(v           => { fxBloomRadVal = Math.round(v * 100); });
+    const u52 = fx.bloomThreshold.subscribe(v        => { fxBloomThrVal = Math.round(v * 100); });
     return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9();
                    u10(); u11(); u12(); u13(); u14(); u15(); u16(); u17(); u18(); u19();
                    u20(); u21(); u22(); u23(); u24(); u25(); u26(); u27(); u28();
                    u29(); u30(); u31(); u32(); u33(); u34(); u35();
-                   u36(); u37(); u38(); u39(); u40(); u41(); u42(); u43(); };
+                   u36(); u37(); u38(); u39(); u40(); u41(); u42(); u43();
+                   u44(); u45(); u46(); u47(); u48(); u49(); u50(); u51(); u52(); };
   });
 
   // ── Zoom display label ───────────────────────────────────────────────────────
@@ -198,6 +222,12 @@
     globeStore.tourSpeed.set(raw / 100); // 10–500 → 0.1–5
   }
 
+  let audioSensLabel = $derived(audioSensVal + '%');
+  function handleAudioSens(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    audioSensitivity.set(raw / 100);
+  }
+
   // ---------------------------------------------------------------------------
   // WASD popup
   // ---------------------------------------------------------------------------
@@ -222,6 +252,13 @@
       detail: { action: tourActive ? 'start' : 'stop' },
     }));
   }
+
+  // Sync tour active state with keyboard shortcut toggles
+  $effect(() => {
+    const handler = () => { tourActive = !tourActive; };
+    document.addEventListener('kg:tour-toggled', handler);
+    return () => document.removeEventListener('kg:tour-toggled', handler);
+  });
 
   // ── Theme effect handlers ──────────────────────────────────────────────────
   let fxDensityLabel = $derived(fxDensityVal + '%');
@@ -330,6 +367,24 @@
   function handleBhHue(e: Event): void {
     const raw = parseInt((e.target as HTMLInputElement).value, 10);
     fx.blackholeHue.set(raw);
+  }
+
+  // ── Bloom (post-processing) handlers ──────────────────────────────────────
+  let fxBloomStrLabel = $derived(fxBloomStrVal + '%');
+  let fxBloomRadLabel = $derived(fxBloomRadVal + '%');
+  let fxBloomThrLabel = $derived(fxBloomThrVal + '%');
+
+  function handleBloomStr(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.bloomStrength.set(raw / 100);
+  }
+  function handleBloomRad(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.bloomRadius.set(raw / 100);
+  }
+  function handleBloomThr(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.bloomThreshold.set(raw / 100);
   }
 </script>
 
@@ -559,6 +614,46 @@
       oninput={handleTourSpeed}
     />
   </div>
+
+  <div class="divider"></div>
+
+  <!-- Audio Reactive -->
+  <div class="globe-ctrl-row" style="justify-content:center">
+    <button
+      class="detail-btn"
+      class:audio-active={audioOn}
+      title={audioOn ? 'Stop audio reactive' : 'Start audio reactive (mic)'}
+      onclick={() => toggleAudio()}
+    >
+      {audioOn ? '■ Stop Audio' : '♫ Audio React'}
+    </button>
+  </div>
+
+  {#if audioOn}
+    <div class="audio-bars">
+      <div class="audio-bar-group">
+        <div class="audio-bar bass" style="height:{Math.round(bassLvl * 100)}%"></div>
+        <span class="audio-bar-label">Bass</span>
+      </div>
+      <div class="audio-bar-group">
+        <div class="audio-bar mid" style="height:{Math.round(midLvl * 100)}%"></div>
+        <span class="audio-bar-label">Mid</span>
+      </div>
+      <div class="audio-bar-group">
+        <div class="audio-bar high" style="height:{Math.round(highLvl * 100)}%"></div>
+        <span class="audio-bar-label">High</span>
+      </div>
+    </div>
+
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Sensitivity</span>
+        <span class="globe-ctrl-label zoom-val">{audioSensLabel}</span>
+      </div>
+      <input type="range" class="fx-density-slider" min="10" max="300" value={audioSensVal}
+        title="Audio sensitivity (10%–300%)" oninput={handleAudioSens} />
+    </div>
+  {/if}
   {/if}
 
   <div class="divider"></div>
@@ -718,6 +813,50 @@
       </div>
       <input type="range" class="bh-hue-slider" min="0" max="360" value={fxBhHueVal}
         title="Black hole color hue (0°–360°)" oninput={handleBhHue} />
+    </div>
+  {/if}
+
+  <!-- Bloom (Post-Processing) -->
+  <div class="globe-ctrl-row">
+    <span class="globe-ctrl-label">Bloom</span>
+    <div
+      class="globe-toggle"
+      class:on={fxBloom}
+      title="Toggle bloom post-processing"
+      onclick={() => fx.bloomEnabled.update(v => !v)}
+      role="switch"
+      aria-checked={fxBloom}
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && fx.bloomEnabled.update(v => !v)}
+    ></div>
+  </div>
+
+  {#if fxBloom}
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Strength</span>
+        <span class="globe-ctrl-label zoom-val">{fxBloomStrLabel}</span>
+      </div>
+      <input type="range" class="fx-density-slider" min="0" max="500" value={fxBloomStrVal}
+        title="Bloom strength (0%–500%)" oninput={handleBloomStr} />
+    </div>
+
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Radius</span>
+        <span class="globe-ctrl-label zoom-val">{fxBloomRadLabel}</span>
+      </div>
+      <input type="range" class="fx-speed-slider" min="0" max="200" value={fxBloomRadVal}
+        title="Bloom radius (0%–200%)" oninput={handleBloomRad} />
+    </div>
+
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">Threshold</span>
+        <span class="globe-ctrl-label zoom-val">{fxBloomThrLabel}</span>
+      </div>
+      <input type="range" class="fx-density-slider" min="0" max="100" value={fxBloomThrVal}
+        title="Bloom threshold (0%–100%)" oninput={handleBloomThr} />
     </div>
   {/if}
 
@@ -1321,6 +1460,43 @@
     background: rgba(255, 200, 50, 0.15) !important;
     border-color: #ffc832 !important;
     color: #ffc832 !important;
+  }
+  .audio-active {
+    background: rgba(50, 255, 100, 0.15) !important;
+    border-color: #32ff64 !important;
+    color: #32ff64 !important;
+  }
+
+  /* Audio visualizer bars */
+  .audio-bars {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    height: 40px;
+    margin: 6px 0;
+    align-items: flex-end;
+  }
+  .audio-bar-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 28px;
+    height: 100%;
+    justify-content: flex-end;
+  }
+  .audio-bar {
+    width: 100%;
+    min-height: 2px;
+    border-radius: 2px 2px 0 0;
+    transition: height 0.05s;
+  }
+  .audio-bar.bass { background: #ff4040; }
+  .audio-bar.mid  { background: #ffaa20; }
+  .audio-bar.high { background: #40ff80; }
+  .audio-bar-label {
+    font-size: 8px;
+    color: var(--text-dim);
+    margin-top: 2px;
   }
 
   /* Theme Effects sub-title */

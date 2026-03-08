@@ -821,3 +821,33 @@ body { background: var(--bg); color: var(--text); font-family: var(--font); over
   background: var(--green); border: 2px solid var(--bg);
   box-shadow: 0 0 5px var(--green); cursor: pointer;
 }
+
+/* ── Immersive mode — hide all UI ──────── */
+body.immersive #globe-controls,
+body.immersive #search-box,
+body.immersive .top-controls,
+body.immersive .legend-panel,
+body.immersive .stats-panel,
+body.immersive .detail-panel,
+body.immersive .path-panel,
+body.immersive .toolbar,
+body.immersive .wasd-hud {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.4s ease !important;
+}
+
+/* Show a small exit hint */
+body.immersive::after {
+  content: 'Press F to exit';
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  font-size: 10px;
+  color: rgba(255,255,255,0.2);
+  font-family: var(--font);
+  letter-spacing: 1px;
+  z-index: 9999;
+  transition: opacity 2s;
+  pointer-events: none;
+}

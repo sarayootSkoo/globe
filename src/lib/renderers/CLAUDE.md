@@ -7,6 +7,10 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #9713 | 5:04 PM | 🔄 | Updated spark bolt color to use theme palette instead of hardcoded value | ~290 |
+| #9706 | " | 🔴 | Fixed flow pulse memory leak by adding cleanup method | ~393 |
+| #9707 | " | 🔄 | Energy wisp color now uses theme palette instead of hardcoded value | ~425 |
+| #9699 | 5:03 PM | 🔄 | Made electric arcs theme-aware using palette colors | ~382 |
 | #9617 | 3:54 PM | 🔴 | Fixed spark bolt glow line to respect theme palette | ~370 |
 | #9593 | 3:24 PM | 🟣 | Connection-Based Node Sizing for Hub Visualization | ~726 |
 | #9584 | 3:20 PM | 🟣 | Added dot sphere gradients for Void, Aurora, and Rain themes | ~416 |

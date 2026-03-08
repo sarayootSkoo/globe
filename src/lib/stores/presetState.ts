@@ -26,6 +26,35 @@ const BUILTIN_PRESETS: Preset[] = [
     },
   },
   {
+    name: 'Low Energy',
+    settings: {
+      'app.theme': 'dark',
+      'app.glow': 0.1,
+      'fx.density': 0.15,
+      'fx.speed': 0.2,
+      'fx.nebula': false,
+      'fx.glitter': false,
+      'fx.shootStars': false,
+      'fx.embers': false,
+      'fx.snowflakes': false,
+      'fx.lightning': false,
+      'fx.elecArcs': false,
+      'fx.plasmaAura': false,
+      'fx.sparkBurst': false,
+      'fx.bgMesh': false,
+      'fx.border': false,
+      'fx.bloom': false,
+      'fx.bhEnabled': false,
+      'globe.autoRotate': true,
+      'globe.wireframe': false,
+      'globe.pulse': false,
+      'globe.comet': false,
+      'globe.rotateSpeed': 0.1,
+      'globe.opacity': 0.8,
+      'globe.dotBright': 0.5,
+    },
+  },
+  {
     name: 'MAX',
     settings: {
       'app.glow': 1,
@@ -72,6 +101,10 @@ const STORE_MAP: Record<string, { store: any; type: 'num' | 'bool' | 'string' }>
   'fx.border': { store: fx.borderEnabled, type: 'bool' },
   'fx.borderIntensity': { store: fx.borderIntensity, type: 'num' },
   'fx.borderSpeed': { store: fx.borderSpeed, type: 'num' },
+  'fx.bloom': { store: fx.bloomEnabled, type: 'bool' },
+  'fx.bloomStr': { store: fx.bloomStrength, type: 'num' },
+  'fx.bloomRad': { store: fx.bloomRadius, type: 'num' },
+  'fx.bloomThr': { store: fx.bloomThreshold, type: 'num' },
   'fx.bhEnabled': { store: fx.blackholeEnabled, type: 'bool' },
   'fx.bhSize': { store: fx.blackholeSize, type: 'num' },
   'fx.bhSpeed': { store: fx.blackholeSpeed, type: 'num' },
@@ -120,6 +153,10 @@ const DEFAULT_VALUES: Record<string, any> = {
   'fx.border': true,
   'fx.borderIntensity': 1,
   'fx.borderSpeed': 1,
+  'fx.bloom': false,
+  'fx.bloomStr': 1,
+  'fx.bloomRad': 0.4,
+  'fx.bloomThr': 0.3,
   'fx.bhEnabled': false,
   'fx.bhSize': 1,
   'fx.bhSpeed': 1,
@@ -200,4 +237,35 @@ export function deletePreset(name: string): void {
 export function initPresets(): void {
   const custom = safeGet<Preset[]>('presets.custom', []);
   presets.set([...BUILTIN_PRESETS, ...custom]);
+}
+
+/** Export all custom presets as a JSON string */
+export function exportPresets(): string {
+  const custom = get(presets).filter(p => !['Chill', 'Low Energy', 'MAX'].includes(p.name));
+  return JSON.stringify(custom, null, 2);
+}
+
+/** Import presets from a JSON string (merges with existing) */
+export function importPresets(json: string): number {
+  try {
+    const imported = JSON.parse(json) as Preset[];
+    if (!Array.isArray(imported)) return 0;
+    const existing = get(presets);
+    let count = 0;
+    for (const p of imported) {
+      if (!p.name || !p.settings || typeof p.settings !== 'object') continue;
+      const idx = existing.findIndex(e => e.name === p.name);
+      if (idx >= 0) {
+        existing[idx] = p;
+      } else {
+        existing.push(p);
+      }
+      count++;
+    }
+    presets.set([...existing]);
+    safeSet('presets.custom', existing.filter(p => !['Chill', 'Low Energy', 'MAX'].includes(p.name)));
+    return count;
+  } catch {
+    return 0;
+  }
 }

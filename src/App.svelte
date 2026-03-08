@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { loadData } from './lib/stores/graphData';
-  import { theme } from './lib/stores/appState';
+  import { theme, immersiveMode } from './lib/stores/appState';
 
   // Background
   import Scanline from './components/background/Scanline.svelte';
@@ -40,6 +40,9 @@
   // Keyboard help
   import KeyboardHelp from './components/controls/KeyboardHelp.svelte';
 
+  // Keyboard shortcuts
+  import KeyboardShortcuts from './components/controls/KeyboardShortcuts.svelte';
+
   let loaded = $state(false);
   let wasdPopupVisible = $state(false);
   let wasdKeys = $state({ w: false, a: false, s: false, d: false, q: false, shift: false });
@@ -49,6 +52,14 @@
   $effect(() => {
     const unsub = theme.subscribe(t => {
       document.documentElement.dataset.theme = t;
+    });
+    return unsub;
+  });
+
+  // Sync immersive mode to document.body class
+  $effect(() => {
+    const unsub = immersiveMode.subscribe(v => {
+      document.body.classList.toggle('immersive', v);
     });
     return unsub;
   });
@@ -113,3 +124,4 @@
 {/if}
 
 <KeyboardHelp />
+<KeyboardShortcuts />

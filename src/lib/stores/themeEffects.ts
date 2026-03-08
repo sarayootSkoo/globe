@@ -46,6 +46,12 @@ export const borderEnabled = writable<boolean>(true);
 export const borderIntensity = writable<number>(1);   // 0.2–2, glow strength
 export const borderSpeed = writable<number>(1);        // 0.25–3, animation speed
 
+/** Post-processing effects */
+export const bloomEnabled = writable<boolean>(false);
+export const bloomStrength = writable<number>(1);    // 0–5
+export const bloomRadius = writable<number>(0.4);    // 0–2
+export const bloomThreshold = writable<number>(0.3); // 0–1
+
 /** Black hole effect — standalone animated effect available on any theme */
 export const blackholeEnabled = writable<boolean>(false);
 export const blackholeSize = writable<number>(1);      // 0–20: overall scale (0.01x–20x)

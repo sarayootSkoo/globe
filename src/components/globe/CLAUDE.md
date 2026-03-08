@@ -7,6 +7,7 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #9691 | 5:03 PM | 🔴 | Fixed memory leak from missing kg:reset event listener cleanup | ~408 |
 | #9613 | 3:47 PM | ✅ | Electric Arcs Enabled Across All Themes | ~558 |
 | #9454 | 12:33 PM | 🔄 | GlobeCanvas Variable Naming Cleanup | ~438 |
 | #9453 | 12:32 PM | 🔵 | Modular Project Uses Svelte 5 Runes API | ~616 |

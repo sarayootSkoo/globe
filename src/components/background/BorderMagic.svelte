@@ -1000,6 +1000,369 @@
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // AURORA THEME — Northern lights: flowing curtains of green/teal/purple
+  // ══════════════════════════════════════════════════════════════════════════
+
+  interface AuroraRibbon {
+    x: number;       // horizontal anchor along top edge (0–W)
+    width: number;   // ribbon width
+    height: number;  // maximum drape depth
+    phase: number;   // phase offset for wave animation
+    speed: number;   // individual speed multiplier
+    hue: number;     // 0=green, 1=teal, 2=purple, 3=cyan
+    alpha: number;   // base opacity
+  }
+
+  const AURORA_COUNT = 18;
+  let auroraRibbons: AuroraRibbon[] = [];
+
+  function buildAurora(W: number, _H: number): void {
+    auroraRibbons = [];
+    for (let i = 0; i < AURORA_COUNT; i++) {
+      auroraRibbons.push({
+        x: (i / AURORA_COUNT) * W + (Math.random() - 0.5) * (W / AURORA_COUNT),
+        width: 60 + Math.random() * 120,
+        height: 80 + Math.random() * 200,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.15 + Math.random() * 0.35,
+        hue: Math.floor(Math.random() * 4),
+        alpha: 0.12 + Math.random() * 0.2,
+      });
+    }
+  }
+
+  function drawAurora(W: number, H: number, time: number, int: number): void {
+    if (!ctx) return;
+
+    // Aurora color palettes [r, g, b] for each hue index
+    const auroraColors: [number, number, number][] = [
+      [30,  220,  80],   // 0: vivid green
+      [0,   200, 180],   // 1: teal
+      [120,  60, 220],   // 2: purple
+      [0,   210, 230],   // 3: cyan
+    ];
+
+    // Layer 1: Background glow wash along top edge
+    const bgGlowH = 200 * int;
+    const bgG = ctx.createLinearGradient(0, 0, 0, bgGlowH);
+    bgG.addColorStop(0,   `rgba(0,80,40,${0.18 * int})`);
+    bgG.addColorStop(0.3, `rgba(0,60,60,${0.1 * int})`);
+    bgG.addColorStop(0.7, `rgba(10,0,40,${0.04 * int})`);
+    bgG.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = bgG;
+    ctx.fillRect(0, 0, W, bgGlowH);
+
+    // Subtle glow on side edges too (Aurora bleeds in from corners)
+    const sideD = 80 * int;
+    const sideEdges = [
+      { x0: 0, y0: 0, x1: sideD, y1: 0, fx: 0, fy: 0, fw: sideD, fh: H * 0.5 },
+      { x0: W, y0: 0, x1: W - sideD, y1: 0, fx: W - sideD, fy: 0, fw: sideD, fh: H * 0.5 },
+    ];
+    for (const e of sideEdges) {
+      const sg = ctx.createLinearGradient(e.x0, e.y0, e.x1, e.y1);
+      sg.addColorStop(0,   `rgba(0,120,60,${0.1 * int})`);
+      sg.addColorStop(0.5, `rgba(0,80,80,${0.04 * int})`);
+      sg.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = sg;
+      ctx.fillRect(e.fx, e.fy, e.fw, e.fh);
+    }
+
+    // Layer 2: Individual ribbon curtains with bezier drape
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (const rb of auroraRibbons) {
+      const t = time * rb.speed + rb.phase;
+
+      // Animate the horizontal sway of the ribbon anchor
+      const sway   = Math.sin(t * 0.8) * 30 + Math.sin(t * 1.3 + rb.phase) * 15;
+      const ax     = rb.x + sway;
+      const drape  = rb.height * (0.55 + 0.45 * Math.abs(Math.sin(t * 0.6))) * int;
+      const waveL  = Math.sin(t * 1.1 + rb.phase * 0.5) * rb.width * 0.3;
+      const waveR  = Math.sin(t * 0.9 + rb.phase * 0.7) * rb.width * 0.3;
+      const halfW  = rb.width * (0.8 + 0.2 * Math.sin(t * 1.7)) * 0.5;
+
+      // fbm shimmer for tip position
+      const shimmer = fbm(ax * 0.008 + time * 0.1, t * 0.05) * 40;
+
+      // Control points for a flowing drape shape
+      const tipX   = ax + shimmer;
+      const tipY   = drape;
+      const cp1X   = ax - halfW * 0.5 + waveL;
+      const cp1Y   = drape * 0.5;
+      const cp2X   = ax + halfW * 0.5 + waveR;
+      const cp2Y   = drape * 0.6;
+
+      const col    = auroraColors[rb.hue];
+      const alpha  = rb.alpha * (0.5 + 0.5 * Math.abs(Math.sin(t * 0.7))) * int;
+
+      // Draw outer glow ribbon
+      ctx.beginPath();
+      ctx.moveTo(ax - halfW, 0);
+      ctx.bezierCurveTo(cp1X - halfW * 0.3, cp1Y, tipX - 10, tipY - 20, tipX, tipY + shimmer * 0.5);
+      ctx.bezierCurveTo(tipX + 10, tipY - 20, cp2X + halfW * 0.3, cp2Y, ax + halfW, 0);
+      ctx.closePath();
+
+      const grad = ctx.createLinearGradient(ax, 0, ax, tipY);
+      grad.addColorStop(0,   `rgba(${col[0]},${col[1]},${col[2]},${alpha * 1.2})`);
+      grad.addColorStop(0.3, `rgba(${col[0]},${col[1]},${col[2]},${alpha * 0.9})`);
+      grad.addColorStop(0.7, `rgba(${Math.min(col[0]+40, 255)},${col[1]},${Math.min(col[2]+40, 255)},${alpha * 0.4})`);
+      grad.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Inner bright core ribbon — narrower, more luminous
+      const coreHalf = halfW * 0.25;
+      ctx.beginPath();
+      ctx.moveTo(ax - coreHalf, 0);
+      ctx.bezierCurveTo(ax - coreHalf * 0.5 + waveL * 0.5, drape * 0.4, tipX - 4, tipY * 0.7, tipX, tipY * 0.8);
+      ctx.bezierCurveTo(tipX + 4, tipY * 0.7, ax + coreHalf * 0.5 + waveR * 0.5, drape * 0.4, ax + coreHalf, 0);
+      ctx.closePath();
+
+      const coreGrad = ctx.createLinearGradient(ax, 0, ax, tipY * 0.8);
+      coreGrad.addColorStop(0,   `rgba(${Math.min(col[0]+80, 255)},${Math.min(col[1]+80, 255)},${Math.min(col[2]+80, 255)},${alpha * 0.8})`);
+      coreGrad.addColorStop(0.5, `rgba(${col[0]},${col[1]},${col[2]},${alpha * 0.5})`);
+      coreGrad.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = coreGrad;
+      ctx.fill();
+    }
+
+    // Layer 3: Shimmering top edge line — aurora horizon
+    const segCount = 120;
+    ctx.lineWidth = 2 * int;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < segCount; i++) {
+      const t2   = i / segCount;
+      const wave = fbm(t2 * 4 + time * 0.3, 0) * 0.5 + 0.5;
+      // Rotate through green→teal→purple along the top
+      const hPos = t2 * 3; // 0–3
+      let r: number, g: number, b: number;
+      if (hPos < 1)      { r = 0; g = Math.round(200 * wave); b = Math.round(80 * wave); }
+      else if (hPos < 2) { r = 0; g = Math.round(180 * wave); b = Math.round(180 * wave); }
+      else               { r = Math.round(100 * wave); g = Math.round(60 * wave); b = Math.round(220 * wave); }
+
+      ctx.beginPath();
+      ctx.moveTo(t2 * W, 0);
+      ctx.lineTo(((i + 1) / segCount) * W, 0);
+      ctx.strokeStyle = `rgba(${r},${g},${b},${(0.2 + 0.4 * wave) * int})`;
+      ctx.stroke();
+    }
+
+    // Layer 4: Corner aurora blooms
+    const cornerPositions = [[0, 0], [W, 0]]; // only top corners for aurora
+    for (let i = 0; i < cornerPositions.length; i++) {
+      const [cx, cy] = cornerPositions[i];
+      const pulse = 0.6 + 0.4 * Math.sin(time * 0.5 + i * 2.1);
+      const r = 150 * int * pulse;
+      const col = i === 0 ? [0, 200, 100] : [80, 40, 200];
+      const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      cg.addColorStop(0,   `rgba(${col[0]},${col[1]},${col[2]},${0.2 * int * pulse})`);
+      cg.addColorStop(0.4, `rgba(${col[0]},${col[1]},${col[2]},${0.08 * int})`);
+      cg.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = cg;
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // RAIN THEME — Diagonal rain streaks, puddle ripples, edge mist
+  // ══════════════════════════════════════════════════════════════════════════
+
+  interface RainDrop {
+    x: number;       // start x (from top edge or left edge)
+    y: number;       // start y
+    len: number;     // streak length
+    speed: number;   // fall speed factor
+    alpha: number;   // opacity
+    angle: number;   // slight angle variation from base diagonal
+    edge: 0 | 1;     // 0=top, 1=right (rain comes from upper-right)
+  }
+
+  interface Ripple {
+    x: number;
+    y: number;
+    r: number;       // current radius
+    maxR: number;    // max radius
+    alpha: number;
+    speed: number;
+  }
+
+  const RAIN_COUNT = 70;
+  const RIPPLE_MAX = 15;
+  let rainDrops: RainDrop[] = [];
+  let ripples: Ripple[] = [];
+  let rippleTimer = 0;
+
+  function buildRain(W: number, H: number): void {
+    rainDrops = [];
+    for (let i = 0; i < RAIN_COUNT; i++) {
+      // Rain comes from top and right edges diagonally
+      const edge = Math.random() > 0.6 ? 1 : 0; // 60% from top, 40% from right
+      rainDrops.push({
+        x: edge === 0 ? Math.random() * W : W - Math.random() * 60,
+        y: edge === 0 ? Math.random() * -H : Math.random() * H * 0.6,
+        len: 20 + Math.random() * 50,
+        speed: 0.6 + Math.random() * 1.2,
+        alpha: 0.08 + Math.random() * 0.25,
+        angle: (-0.3 - Math.random() * 0.2), // diagonal angle (left and down)
+        edge: edge as 0 | 1,
+      });
+    }
+    ripples = [];
+  }
+
+  function drawRain(W: number, H: number, time: number, int: number): void {
+    if (!ctx) return;
+
+    // Layer 1: Mist/fog gradients along all edges — blue-grey atmospheric haze
+    const mistD = 100 * int;
+    const mistEdges = [
+      { x0: 0, y0: 0, x1: 0, y1: mistD, fx: 0, fy: 0, fw: W, fh: mistD },
+      { x0: 0, y0: H, x1: 0, y1: H - mistD, fx: 0, fy: H - mistD, fw: W, fh: mistD },
+      { x0: 0, y0: 0, x1: mistD, y1: 0, fx: 0, fy: 0, fw: mistD, fh: H },
+      { x0: W, y0: 0, x1: W - mistD, y1: 0, fx: W - mistD, fy: 0, fw: mistD, fh: H },
+    ];
+    for (let i = 0; i < mistEdges.length; i++) {
+      const e = mistEdges[i];
+      const wave = 0.7 + 0.3 * Math.sin(time * 0.4 + i * 1.7);
+      const mg = ctx.createLinearGradient(e.x0, e.y0, e.x1, e.y1);
+      mg.addColorStop(0,   `rgba(80,100,120,${0.15 * int * wave})`);
+      mg.addColorStop(0.4, `rgba(60,80,100,${0.07 * int})`);
+      mg.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = mg;
+      ctx.fillRect(e.fx, e.fy, e.fw, e.fh);
+    }
+
+    // Layer 2: Rain streaks (animated with time offset)
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+
+    for (const drop of rainDrops) {
+      // Advance position based on time
+      const travel = (time * drop.speed * 60) % (H + drop.len * 2 + W * 0.5);
+      // Diagonal fall: move left and down
+      const dx = travel * Math.cos(drop.angle + Math.PI / 2);
+      const dy = travel * Math.sin(drop.angle + Math.PI / 2);
+
+      const sx = drop.x + dx;
+      const sy = drop.y + dy;
+      const ex = sx + Math.cos(drop.angle) * drop.len;
+      const ey = sy + Math.sin(drop.angle) * drop.len;
+
+      // Wind shimmer from fbm
+      const shimmer = 0.7 + 0.3 * fbm(sx * 0.01 + time * 0.2, sy * 0.01);
+      const alpha = drop.alpha * shimmer * int;
+
+      // Outer thin glow
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.strokeStyle = `rgba(100,140,180,${alpha * 0.4})`;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+
+      // Inner bright core
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.strokeStyle = `rgba(160,200,230,${alpha})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    // Layer 3: Puddle ripple circles along bottom edge
+    // Spawn new ripples periodically
+    rippleTimer -= speed;
+    if (rippleTimer <= 0 && ripples.length < RIPPLE_MAX) {
+      const rx = Math.random() * W;
+      const ry = H - Math.random() * 20;
+      ripples.push({
+        x: rx, y: ry,
+        r: 0,
+        maxR: 20 + Math.random() * 40,
+        alpha: 0.3 + Math.random() * 0.3,
+        speed: 0.4 + Math.random() * 0.6,
+      });
+      rippleTimer = 4 + Math.random() * 8;
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.lineCap = 'butt';
+
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const rp = ripples[i];
+      rp.r += rp.speed * speed;
+      const life = 1 - rp.r / rp.maxR;
+
+      if (life <= 0) {
+        ripples.splice(i, 1);
+        continue;
+      }
+
+      const ripAlpha = rp.alpha * life * int;
+      const scaleY = 0.35; // flatten ellipse to look like ground puddle
+
+      ctx.save();
+      ctx.translate(rp.x, rp.y);
+      ctx.scale(1, scaleY);
+
+      // Outer ring
+      ctx.beginPath();
+      ctx.arc(0, 0, rp.r, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(100,150,200,${ripAlpha * 0.5})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Inner sharp ring
+      ctx.beginPath();
+      ctx.arc(0, 0, rp.r * 0.7, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(140,180,220,${ripAlpha * 0.3})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // Layer 4: Bottom edge wet sheen
+    const sheenG = ctx.createLinearGradient(0, H, 0, H - 40 * int);
+    sheenG.addColorStop(0,   `rgba(60,90,130,${0.18 * int})`);
+    sheenG.addColorStop(0.5, `rgba(40,70,110,${0.08 * int})`);
+    sheenG.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = sheenG;
+    ctx.fillRect(0, H - 40 * int, W, 40 * int);
+
+    // Subtle moving mist streaks from noise
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 8; i++) {
+      const seed = i * 17.3;
+      const px = ((seed * 0.13 + time * 0.03) % 1) * W;
+      const py = fbm(px * 0.005 + time * 0.05, seed) * H * 0.3;
+      const mistLen = 80 + Math.sin(seed + time * 0.2) * 40;
+      const mistAlpha = (0.02 + 0.02 * Math.abs(Math.sin(time * 0.3 + seed))) * int;
+
+      const mg2 = ctx.createLinearGradient(px, py, px + mistLen * 0.7, py + mistLen * 0.4);
+      mg2.addColorStop(0,   'rgba(0,0,0,0)');
+      mg2.addColorStop(0.5, `rgba(70,100,140,${mistAlpha})`);
+      mg2.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.strokeStyle = mg2 as unknown as string;
+      ctx.lineWidth = 15 + Math.sin(seed) * 8;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + mistLen * 0.7, py + mistLen * 0.4);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // BLACK HOLE — Standalone configurable effect (works on any theme)
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -1213,6 +1576,8 @@
       lastH = H;
       buildGalaxy(W, H);
       buildWinter(W, H);
+      buildAurora(W, H);
+      buildRain(W, H);
     }
 
     ctx.clearRect(0, 0, W, H);
@@ -1229,6 +1594,8 @@
       case 'light':    drawLight(W, H, time, int); break;
       case 'electric': drawElectric(W, H, time, int); break;
       case 'void':     drawVoid(W, H, time, int); break;
+      case 'aurora':   drawAurora(W, H, time, int); break;
+      case 'rain':     drawRain(W, H, time, int); break;
     }
 
     // Standalone black hole effect (works on any theme)
@@ -1247,6 +1614,8 @@
     buildFlames();
     buildGalaxy(canvas.width, canvas.height);
     buildWinter(canvas.width, canvas.height);
+    buildAurora(canvas.width, canvas.height);
+    buildRain(canvas.width, canvas.height);
 
     // Read initial values
     enabled = get(fx.borderEnabled);

@@ -111,12 +111,14 @@
       } else {
         selectedNodeId.set(null);
         globeStore.lockedNode.set(null);
+        nodeTrail?.clear();
       }
     };
 
     renderer.onNodeUnlock = () => {
       selectedNodeId.set(null);
       globeStore.lockedNode.set(null);
+      nodeTrail?.clear();
     };
 
     // WASD flyTo: forward the request to the renderer
@@ -257,22 +259,50 @@
     const handleAutoTour = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (!renderer || !autoTour) return;
-      if (detail?.action === 'start') {
+      if (detail?.action === 'start' || (detail?.action === 'toggle' && !autoTour.active)) {
         const tourNodes = renderer.nodeMeshes.map(entry => ({
           data: entry.data,
           position: entry.mesh.position.clone(),
         }));
         autoTour.start(tourNodes);
-      } else if (detail?.action === 'stop') {
+        document.dispatchEvent(new CustomEvent('kg:tour-toggled'));
+      } else if (detail?.action === 'stop' || (detail?.action === 'toggle' && autoTour.active)) {
         autoTour.stop();
+        document.dispatchEvent(new CustomEvent('kg:tour-toggled'));
       }
     };
     document.addEventListener('kg:autotour', handleAutoTour);
+
+    // ── Listen for kg:reset to clear trail ────────────────────────────────
+    const handleReset = () => {
+      nodeTrail?.clear();
+      selectedNodeId.set(null);
+      globeStore.lockedNode.set(null);
+    };
+    document.addEventListener('kg:reset', handleReset);
 
     // ── Tour speed subscription ───────────────────────────────────────────
     const unsubTourSpeed = globeStore.tourSpeed.subscribe(v => {
       // v is multiplier: 1 = 3s, 2 = 1.5s, 0.5 = 6s
       if (autoTour) autoTour.setPauseDuration(3 / Math.max(0.1, v));
+    });
+
+    // ── Bloom post-processing subscription ──────────────────────────────────
+    const unsubBloom = fx.bloomEnabled.subscribe(v => {
+      if (!renderer) return;
+      renderer.setBloom(v, get(fx.bloomStrength), get(fx.bloomRadius), get(fx.bloomThreshold));
+    });
+    const unsubBloomParams = fx.bloomStrength.subscribe(() => {
+      if (!renderer) return;
+      renderer.updateBloom(get(fx.bloomStrength), get(fx.bloomRadius), get(fx.bloomThreshold));
+    });
+    const unsubBloomR = fx.bloomRadius.subscribe(() => {
+      if (!renderer) return;
+      renderer.updateBloom(get(fx.bloomStrength), get(fx.bloomRadius), get(fx.bloomThreshold));
+    });
+    const unsubBloomT = fx.bloomThreshold.subscribe(() => {
+      if (!renderer) return;
+      renderer.updateBloom(get(fx.bloomStrength), get(fx.bloomRadius), get(fx.bloomThreshold));
     });
 
     // ── Resize ───────────────────────────────────────────────────────────────
@@ -363,7 +393,12 @@
       unsubSparkRate();
       document.removeEventListener('kg:flyto', handleFlyTo);
       document.removeEventListener('kg:autotour', handleAutoTour);
+      document.removeEventListener('kg:reset', handleReset);
       unsubTourSpeed();
+      unsubBloom();
+      unsubBloomParams();
+      unsubBloomR();
+      unsubBloomT();
     };
   });
 

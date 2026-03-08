@@ -92,6 +92,12 @@ function buildEntries(): PersistEntry<any>[] {
     num(fx.borderIntensity,   'fx.borderIntensity', 1,   0, 20),
     num(fx.borderSpeed,       'fx.borderSpeed',     1,   0, 20),
 
+    // Post-processing
+    bool(fx.bloomEnabled,     'fx.bloom',           false),
+    num(fx.bloomStrength,     'fx.bloomStr',         1,   0, 5),
+    num(fx.bloomRadius,       'fx.bloomRad',         0.4, 0, 2),
+    num(fx.bloomThreshold,    'fx.bloomThr',         0.3, 0, 1),
+
     // Black hole effect
     bool(fx.blackholeEnabled, 'fx.bhEnabled',      false),
     num(fx.blackholeSize,     'fx.bhSize',          1,   0, 20),

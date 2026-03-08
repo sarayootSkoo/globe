@@ -7,6 +7,11 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #9710 | 5:04 PM | 🟣 | Added spark burst intensity and rate controls to GlobeControls | ~336 |
+| #9711 | " | 🟣 | Created preset system with save/load/export/import for effect configurations | ~697 |
+| #9705 | " | ✅ | Added three new theme option styles for void, aurora, and rain | ~384 |
+| #9709 | " | ✅ | Wired spark burst effect subscriptions in GlobeControls cleanup | ~421 |
+| #9698 | 5:03 PM | 🟣 | Created keyboard shortcuts help modal component | ~473 |
 | #9637 | 4:39 PM | 🟣 | Added Tour Speed State Variable to Globe Controls | ~228 |
 | #9555 | 2:33 PM | 🟣 | Added electric theme effect controls (Lightning, Globe Arcs, Plasma Aura) | ~497 |
 | #9510 | 1:59 PM | ⚖️ | Architecture plan for collapsible panels and settings persistence | ~745 |

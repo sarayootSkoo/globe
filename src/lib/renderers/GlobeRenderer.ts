@@ -11,6 +11,9 @@
 
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 import type { GraphNode, GraphLink } from '../types';
 import { CATEGORIES, GLOBE_RADIUS, DOT_COUNT, DEFAULT_CAM_DIST, FOCUS_CAM_DIST } from '../constants';
@@ -104,6 +107,30 @@ export class GlobeRenderer {
 
   // ── Internal: last glowLevel used (for resets without passing params) ─────
   private _glowLevel: number = 0.35;
+
+  // ── Post-processing ───────────────────────────────────────────────────────
+  private _composer: EffectComposer | null = null;
+  private _bloomPass: UnrealBloomPass | null = null;
+  private _bloomEnabled: boolean = false;
+
+  // ── Connection flow animation ──────────────────────────────────────────────
+  private _flowPulses: {
+    line: THREE.Line;
+    mesh: THREE.Mesh;     // small sphere traveling along path
+    progress: number;     // 0→1
+    speed: number;
+    points: THREE.Vector3[];
+  }[] = [];
+
+  // ── Theme transition ──────────────────────────────────────────────────────
+  private _themeTransition: {
+    startColors: number[];  // old dot colors (flat r,g,b array)
+    endColors: number[];    // new dot colors
+    startWire: THREE.Color;
+    endWire: THREE.Color;
+    progress: number;       // 0→1
+    duration: number;       // seconds
+  } | null = null;
 
   // ---------------------------------------------------------------------------
   // Constructor
@@ -423,6 +450,33 @@ export class GlobeRenderer {
 
     this._glowLevel = params.glowLevel;
 
+    // ── Theme transition lerp ───────────────────────────────────────────────
+    if (this._themeTransition) {
+      const tr = this._themeTransition;
+      tr.progress = Math.min(1, tr.progress + dt / tr.duration);
+      const t = tr.progress * tr.progress * (3 - 2 * tr.progress); // smoothstep
+
+      // Lerp dot sphere colors
+      if (this.dotParticles) {
+        const colorAttr = this.dotParticles.geometry.getAttribute('color') as THREE.BufferAttribute;
+        const arr = colorAttr.array as Float32Array;
+        for (let i = 0; i < arr.length; i++) {
+          arr[i] = tr.startColors[i] + (tr.endColors[i] - tr.startColors[i]) * t;
+        }
+        colorAttr.needsUpdate = true;
+      }
+
+      // Lerp wireframe color
+      if (this.wireframe) {
+        const mat = this.wireframe.material as THREE.MeshBasicMaterial;
+        mat.color.copy(tr.startWire).lerp(tr.endWire, t);
+      }
+
+      if (tr.progress >= 1) {
+        this._themeTransition = null;
+      }
+    }
+
     this.controls.update();
 
     // ── Visibility toggles ─────────────────────────────────────────────────
@@ -533,7 +587,30 @@ export class GlobeRenderer {
       this._animateHeatmapRings(this.pulseTime);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    // ── Connection flow pulse animation ─────────────────────────────────────
+    for (const fp of this._flowPulses) {
+      fp.progress += dt * fp.speed;
+      if (fp.progress > 1) fp.progress -= 1; // loop
+
+      // Interpolate position along arc points
+      const totalSegs = fp.points.length - 1;
+      const rawIdx = fp.progress * totalSegs;
+      const segIdx = Math.min(Math.floor(rawIdx), totalSegs - 1);
+      const segT = rawIdx - segIdx;
+      fp.mesh.position.lerpVectors(fp.points[segIdx], fp.points[segIdx + 1], segT);
+
+      // Pulse glow at midpoint
+      const pulse = Math.sin(fp.progress * Math.PI);
+      (fp.mesh.material as THREE.MeshBasicMaterial).opacity = 0.3 + pulse * 0.7;
+      fp.mesh.scale.setScalar(0.5 + pulse * 0.5);
+    }
+
+    // ── Render (with or without post-processing) ──────────────────────────
+    if (this._bloomEnabled && this._composer) {
+      this._composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -576,6 +653,47 @@ export class GlobeRenderer {
     const entry = this.nodeMeshes.find(g => g.data.id === d.id);
     if (entry?.labelEl) entry.labelEl.style.opacity = '1';
 
+    // ── Spawn flow pulses along connected links ─────────────────────────────
+    this._clearFlowPulses();
+    this.linkLines.forEach(line => {
+      const l = line.userData['linkData'] as GraphLink | undefined;
+      if (!l) return;
+      const sid = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+      const tid = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+      if (sid !== d.id && tid !== d.id) return;
+
+      // Get points from the line geometry
+      const positions = (line.geometry.getAttribute('position') as THREE.BufferAttribute);
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i < positions.count; i++) {
+        pts.push(new THREE.Vector3(positions.getX(i), positions.getY(i), positions.getZ(i)));
+      }
+      if (pts.length < 2) return;
+
+      // If hovered node is target, reverse so flow goes outward
+      const flowPts = sid === d.id ? pts : [...pts].reverse();
+
+      const sphereGeo = new THREE.SphereGeometry(3, 8, 8);
+      const sphereMat = new THREE.MeshBasicMaterial({
+        color: 0x00d4ff,
+        transparent: true,
+        opacity: 0.9,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+      sphere.position.copy(flowPts[0]);
+      this.scene.add(sphere);
+
+      this._flowPulses.push({
+        line,
+        mesh: sphere,
+        progress: 0,
+        speed: 0.6 + Math.random() * 0.4,
+        points: flowPts,
+      });
+    });
+
     // Notify Svelte component
     this.onNodeHover?.(d);
   }
@@ -606,7 +724,19 @@ export class GlobeRenderer {
       if (labelEl) labelEl.style.opacity = '0';
     });
 
+    this._clearFlowPulses();
+
     this.onNodeHover?.(null);
+  }
+
+  /** Remove all active flow pulse meshes from scene */
+  private _clearFlowPulses(): void {
+    for (const fp of this._flowPulses) {
+      this.scene.remove(fp.mesh);
+      fp.mesh.geometry.dispose();
+      (fp.mesh.material as THREE.MeshBasicMaterial).dispose();
+    }
+    this._flowPulses = [];
   }
 
   /**
@@ -713,6 +843,38 @@ export class GlobeRenderer {
     };
 
     this._flyAnimId = requestAnimationFrame(step);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Post-processing
+  // ---------------------------------------------------------------------------
+
+  /** Enable/disable bloom post-processing */
+  setBloom(enabled: boolean, strength = 1, radius = 0.4, threshold = 0.3): void {
+    this._bloomEnabled = enabled;
+    if (enabled) {
+      if (!this._composer) {
+        const size = this.renderer.getSize(new THREE.Vector2());
+        this._composer = new EffectComposer(this.renderer);
+        this._composer.addPass(new RenderPass(this.scene, this.camera));
+        this._bloomPass = new UnrealBloomPass(size, strength, radius, threshold);
+        this._composer.addPass(this._bloomPass);
+      }
+      if (this._bloomPass) {
+        this._bloomPass.strength = strength;
+        this._bloomPass.radius = radius;
+        this._bloomPass.threshold = threshold;
+      }
+    }
+  }
+
+  /** Update bloom parameters without toggling */
+  updateBloom(strength: number, radius: number, threshold: number): void {
+    if (this._bloomPass) {
+      this._bloomPass.strength = strength;
+      this._bloomPass.radius = radius;
+      this._bloomPass.threshold = threshold;
+    }
   }
 
   /** Fly camera back to the default position (straight ahead, dist=900). */
@@ -1004,10 +1166,26 @@ export class GlobeRenderer {
       dark: 0x00d4ff, light: 0xe0aa20, fire: 0xff6a00, winter: 0x7ec8ff, galaxy: 0xb46aff, electric: 0x3c8cff,
       void: 0xb040ff, aurora: 0x40ffa0, rain: 0x6090c0,
     };
+
+    // ── Capture old colors for smooth transition ──────────────────────────
+    let oldDotColors: number[] | null = null;
+    let oldWireColor: THREE.Color | null = null;
+
     if (this.wireframe) {
-      (this.wireframe.material as THREE.MeshBasicMaterial).color.setHex(
-        wireColors[themeName] ?? 0x00d4ff,
-      );
+      oldWireColor = (this.wireframe.material as THREE.MeshBasicMaterial).color.clone();
+    }
+    if (this.dotParticles) {
+      const oldColorAttr = this.dotParticles.geometry.getAttribute('color') as THREE.BufferAttribute | null;
+      if (oldColorAttr) {
+        oldDotColors = Array.from(oldColorAttr.array as Float32Array);
+      }
+    }
+
+    // Set wireframe target color immediately (transition lerps from old)
+    const newWireColor = new THREE.Color(wireColors[themeName] ?? 0x00d4ff);
+    if (this.wireframe) {
+      // Will be lerped in animate() — set target via transition
+      (this.wireframe.material as THREE.MeshBasicMaterial).color.copy(newWireColor);
     }
 
     // Rebuild dot sphere gradient colors for the new theme
@@ -1089,6 +1267,29 @@ export class GlobeRenderer {
       }
 
       geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+      // ── Setup smooth transition ─────────────────────────────────────────
+      if (oldDotColors && oldDotColors.length === colors.length && oldWireColor) {
+        // Start with old colors, animate toward new
+        const colorAttr = geo.getAttribute('color') as THREE.BufferAttribute;
+        for (let i = 0; i < oldDotColors.length; i++) {
+          (colorAttr.array as Float32Array)[i] = oldDotColors[i];
+        }
+        colorAttr.needsUpdate = true;
+
+        if (this.wireframe) {
+          (this.wireframe.material as THREE.MeshBasicMaterial).color.copy(oldWireColor);
+        }
+
+        this._themeTransition = {
+          startColors: oldDotColors,
+          endColors: colors,
+          startWire: oldWireColor,
+          endWire: newWireColor,
+          progress: 0,
+          duration: 0.6,
+        };
+      }
     }
   }
 
@@ -1149,6 +1350,7 @@ export class GlobeRenderer {
     this.camera.aspect = W / H;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(W, H);
+    if (this._composer) this._composer.setSize(W, H);
   }
 
   /** Cancels animation frames and disposes all Three.js resources. */

@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { presets, activePresetName, applyPreset, savePreset, deletePreset, initPresets, resetToDefaults } from '../../lib/stores/presetState';
+  import { presets, activePresetName, applyPreset, savePreset, deletePreset, initPresets, resetToDefaults, exportPresets, importPresets } from '../../lib/stores/presetState';
   import type { Preset } from '../../lib/stores/presetState';
 
   let presetList = $state<Preset[]>([]);
   let activeName = $state<string | null>(null);
   let showSaveInput = $state(false);
   let newPresetName = $state('');
+  let showImportInput = $state(false);
+  let importJson = $state('');
 
   $effect(() => {
     initPresets();
@@ -35,7 +37,47 @@
     deletePreset(name);
   }
 
-  const builtinNames = ['Chill', 'MAX'];
+  function handleExport(): void {
+    const json = exportPresets();
+    navigator.clipboard.writeText(json).then(() => {
+      // brief visual feedback handled by button text
+    });
+  }
+
+  function handleImport(): void {
+    const count = importPresets(importJson);
+    if (count > 0) {
+      importJson = '';
+      showImportInput = false;
+    }
+  }
+
+  const builtinNames = ['Chill', 'Low Energy', 'MAX'];
+
+  // ── Preset thumbnail color mapping ────────────────────────────────────────
+  const THEME_COLORS: Record<string, string> = {
+    dark:     '#4488cc',
+    light:    '#aaccff',
+    fire:     '#ff5522',
+    winter:   '#88ccff',
+    galaxy:   '#9944ff',
+    electric: '#00eeff',
+    void:     '#8800cc',
+    aurora:   '#22ff88',
+    rain:     '#4477aa',
+  };
+
+  function presetThumbStyle(preset: Preset): string {
+    const s = preset.settings;
+    const themeName = (s['app.theme'] as string) || 'dark';
+    const baseColor = THEME_COLORS[themeName] || '#4488cc';
+    const glow = Math.min(s['app.glow'] as number ?? 0.35, 1);
+    const density = Math.min((s['fx.density'] as number ?? 1) / 5, 1);
+    const speed = Math.min((s['fx.speed'] as number ?? 1) / 3, 1);
+    // Build a gradient: left = theme color (opacity=glow), right = energy (density+speed)
+    const energyBright = Math.round((density + speed) * 50);
+    return `background: linear-gradient(90deg, ${baseColor}${Math.round(glow * 200).toString(16).padStart(2,'0')}, rgba(255,255,255,${energyBright / 100})); opacity: ${0.5 + glow * 0.5};`;
+  }
 </script>
 
 <div class="preset-panel">
@@ -48,6 +90,7 @@
         onclick={() => handleApply(preset)}
         title="Apply {preset.name} preset"
       >
+        <span class="preset-thumb" style={presetThumbStyle(preset)}></span>
         {preset.name}
         {#if !builtinNames.includes(preset.name)}
           <span
@@ -70,10 +113,24 @@
   </div>
 
   <div class="preset-actions">
-    <button class="preset-reset-btn" onclick={() => resetToDefaults()} title="Reset all effects to defaults">
-      Reset
-    </button>
+    <button class="preset-reset-btn" onclick={() => { resetToDefaults(); document.dispatchEvent(new CustomEvent('kg:reset')); }} title="Reset all effects to defaults">Reset</button>
+    <button class="preset-reset-btn" onclick={handleExport} title="Copy presets to clipboard">Export</button>
+    <button class="preset-reset-btn" onclick={() => { showImportInput = !showImportInput; }} title="Import presets from JSON">Import</button>
   </div>
+
+  {#if showImportInput}
+    <div class="preset-save-row" style="margin-bottom:4px">
+      <input
+        class="preset-input"
+        type="text"
+        placeholder="Paste JSON..."
+        bind:value={importJson}
+        onkeydown={(e) => e.key === 'Enter' && handleImport()}
+      />
+      <button class="preset-save-btn" onclick={handleImport}>OK</button>
+      <button class="preset-save-btn cancel" onclick={() => { showImportInput = false; }}>X</button>
+    </div>
+  {/if}
 
   {#if showSaveInput}
     <div class="preset-save-row">
@@ -116,6 +173,7 @@
   .preset-btn {
     position: relative;
     padding: 4px 10px;
+    padding-top: 8px;
     background: rgba(255,255,255,0.04);
     border: 1px solid var(--border);
     border-radius: 3px;
@@ -125,6 +183,16 @@
     font-family: var(--font);
     letter-spacing: 0.5px;
     transition: all 0.2s;
+    overflow: hidden;
+  }
+  .preset-thumb {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: 3px 3px 0 0;
+    transition: opacity 0.3s;
   }
   .preset-btn:hover {
     background: rgba(0, 212, 255, 0.1);

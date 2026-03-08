@@ -39,3 +39,6 @@ export const activeCats = writable<Set<string>>(new Set(Object.keys(CATEGORIES))
  * Cleared when mode leaves 'path'.
  */
 export const pathSelection = writable<string[]>([]);
+
+/** Immersive mode — hides all UI panels, shows only globe + effects */
+export const immersiveMode = writable<boolean>(false);
