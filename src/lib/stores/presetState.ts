@@ -222,6 +222,22 @@ const DEFAULT_VALUES: Record<string, any> = {
   'globe.tourSpeed': 1,
 };
 
+/** Disable all visual effects (set all booleans to false, numeric intensities to 0) */
+export function disableAllEffects(): void {
+  for (const [key, entry] of Object.entries(STORE_MAP)) {
+    if (entry.type === 'bool') {
+      entry.store.set(false);
+    } else if (entry.type === 'num' && key !== 'app.glow' && key !== 'globe.zoom' && key !== 'globe.opacity') {
+      entry.store.set(0);
+    }
+  }
+  // Keep globe visible
+  globe.globeOpacity.set(1);
+  globe.zoomLevel.set(55);
+  glowLevel.set(0);
+  activePresetName.set(null);
+}
+
 /** Reset all effect stores to their default values (does not touch presets) */
 export function resetToDefaults(): void {
   for (const [key, value] of Object.entries(DEFAULT_VALUES)) {

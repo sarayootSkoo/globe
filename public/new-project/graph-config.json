@@ -1,0 +1,12 @@
+{
+  "projectName": "New Project Docs",
+  "dataFile": "./new-project/graph-data.json",
+  "basePath": "/Users/grammer/Documents/git-central/knowledge/demo/new-project",
+  "categories": {
+    "core":     { "label": "Core Docs",     "color": "#00d4ff", "glow": "rgba(0,212,255,0.5)" },
+    "backend":  { "label": "Backend",       "color": "#10b981", "glow": "rgba(16,185,129,0.5)" },
+    "frontend": { "label": "Frontend",      "color": "#3b82f6", "glow": "rgba(59,130,246,0.5)" },
+    "build":    { "label": "Build & Deploy","color": "#f97316", "glow": "rgba(249,115,22,0.5)" },
+    "shadow":   { "label": "Shadow Docs",   "color": "#a855f7", "glow": "rgba(168,85,247,0.5)" }
+  }
+}

@@ -1,13 +1,18 @@
 <script lang="ts">
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
+  import { graphConfig } from '../../lib/config';
 
   let nodes = $state<typeof $graphNodes>([]);
   let links = $state<typeof $graphLinks>([]);
+  let projectName = $state('KNOWLEDGE GRAPH');
 
   $effect(() => {
     const unsubNodes = graphNodes.subscribe(v => { nodes = v; });
     const unsubLinks = graphLinks.subscribe(v => { links = v; });
-    return () => { unsubNodes(); unsubLinks(); };
+    const unsubConfig = graphConfig.subscribe(c => {
+      projectName = (c.projectName || 'Knowledge Graph').toUpperCase();
+    });
+    return () => { unsubNodes(); unsubLinks(); unsubConfig(); };
   });
 
   let statsText = $derived(
@@ -18,7 +23,7 @@
 </script>
 
 <div id="top-banner">
-  <h1>KNOWLEDGE GRAPH — GIT-CENTRAL</h1>
+  <h1>{projectName}</h1>
   <div class="subtitle">
     <span id="stats-inline">{statsText}</span>
   </div>

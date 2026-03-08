@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { loadData } from './lib/stores/graphData';
+  import { loadConfig, graphConfig } from './lib/config';
+  import { setCategories } from './lib/constants';
   import { theme, immersiveMode } from './lib/stores/appState';
 
   // Background
@@ -65,7 +67,9 @@
   });
 
   onMount(async () => {
-    await loadData();
+    const config = await loadConfig();
+    setCategories(config.categories);
+    await loadData(config);
     loaded = true;
   });
 

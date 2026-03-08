@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { presets, activePresetName, applyPreset, savePreset, deletePreset, initPresets, resetToDefaults, exportPresetsAsFile, importPresetsFromFile } from '../../lib/stores/presetState';
+  import { presets, activePresetName, applyPreset, savePreset, deletePreset, initPresets, resetToDefaults, disableAllEffects, exportPresetsAsFile, importPresetsFromFile } from '../../lib/stores/presetState';
   import type { Preset } from '../../lib/stores/presetState';
 
   let presetList = $state<Preset[]>([]);
@@ -112,6 +112,7 @@
   </div>
 
   <div class="preset-actions">
+    <button class="preset-disable-btn" onclick={() => { disableAllEffects(); document.dispatchEvent(new CustomEvent('kg:reset')); }} title="Turn off all visual effects">Disable All</button>
     <button class="preset-reset-btn" onclick={() => { resetToDefaults(); document.dispatchEvent(new CustomEvent('kg:reset')); }} title="Reset all effects to defaults">Reset</button>
     <button class="preset-reset-btn" onclick={handleExport} title="Download presets as .json file">Export</button>
     <button class="preset-reset-btn" onclick={handleImport} title="Import presets from .json file">Import</button>
@@ -216,6 +217,24 @@
     display: flex;
     gap: 4px;
     margin-bottom: 4px;
+  }
+  .preset-disable-btn {
+    flex: 1;
+    padding: 4px 8px;
+    background: rgba(255, 50, 50, 0.05);
+    border: 1px dashed rgba(255, 80, 80, 0.4);
+    border-radius: 3px;
+    font-size: 9px;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: var(--font);
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+  }
+  .preset-disable-btn:hover {
+    border-color: #ff5555;
+    color: #ff5555;
+    background: rgba(255, 50, 50, 0.12);
   }
   .preset-reset-btn {
     flex: 1;
