@@ -22,6 +22,8 @@ export interface GraphNode {
   __opacity?: number;
   __opFrom?: number;
   __opTo?: number;
+  // Populated by updateNodes — IDs of directly connected nodes
+  connections?: string[];
 }
 
 export interface GraphLink {

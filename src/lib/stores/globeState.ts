@@ -85,3 +85,16 @@ export const lockedNode = writable<GraphNode | null>(null);
  * when combined with additive-blended effects like electric arcs.
  */
 export const globeOpacity = writable<number>(1);
+
+/**
+ * Dot sphere brightness multiplier (0–20, where 1 = 100%).
+ * Independent of globeOpacity — lets users boost or dim dots separately.
+ */
+export const dotBrightness = writable<number>(1);
+
+/**
+ * Auto tour speed multiplier (0.2–5).
+ * Controls how long the camera pauses at each node.
+ * 1 = 3s pause (default), 2 = 1.5s, 0.5 = 6s.
+ */
+export const tourSpeed = writable<number>(1);

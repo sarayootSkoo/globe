@@ -48,15 +48,16 @@
 <style>
   #search-box {
     position: fixed;
-    bottom: 16px;
+    bottom: 36px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 20;
+    width: 340px;
   }
 
   #search-wrap {
     position: relative;
-    display: inline-block;
+    width: 100%;
   }
 
   #search-input {

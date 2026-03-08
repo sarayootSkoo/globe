@@ -6,6 +6,10 @@
   import { GlobeWASD } from '../../lib/renderers/GlobeWASD';
   import { GlobeCometTrails } from '../../lib/renderers/GlobeCometTrails';
   import { GlobeElectricArcs } from '../../lib/renderers/GlobeElectricArcs';
+  import { GlobeNodeExplosion } from '../../lib/renderers/GlobeNodeExplosion';
+  import { GlobeConnectionPulse } from '../../lib/renderers/GlobeConnectionPulse';
+  import { GlobeNodeTrail } from '../../lib/renderers/GlobeNodeTrail';
+  import { GlobeAutoTour } from '../../lib/renderers/GlobeAutoTour';
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
   import { glowLevel, selectedNodeId, theme, activeCats } from '../../lib/stores/appState';
   import * as fx from '../../lib/stores/themeEffects';
@@ -29,6 +33,10 @@
   let wasd: GlobeWASD | null = null;
   let comets: GlobeCometTrails | null = null;
   let electricArcs: GlobeElectricArcs | null = null;
+  let nodeExplosion: GlobeNodeExplosion | null = null;
+  let connectionPulse: GlobeConnectionPulse | null = null;
+  let nodeTrail: GlobeNodeTrail | null = null;
+  let autoTour: GlobeAutoTour | null = null;
 
   // ── Reactive state that mirrors stores ───────────────────────────────────────
   let visible = $state(true);   // drives class:show — true = globe layout active
@@ -47,6 +55,27 @@
     wasd         = new GlobeWASD(renderer.camera, renderer.controls);
     comets       = new GlobeCometTrails(renderer.scene);
     electricArcs = new GlobeElectricArcs(renderer.scene);
+    nodeExplosion   = new GlobeNodeExplosion(renderer.scene);
+    connectionPulse = new GlobeConnectionPulse(renderer.scene);
+    nodeTrail       = new GlobeNodeTrail(renderer.scene);
+    autoTour = new GlobeAutoTour({
+      flyTo: (pos, dist) => renderer?.flyTo(pos, dist),
+      onNodeFocus: (node) => {
+        selectedNodeId.set(node.id);
+        globeStore.lockedNode.set(node);
+        if (renderer) {
+          renderer.lockedNode = node;
+          renderer.hovered = node;
+          renderer.controls.autoRotate = false;
+        }
+      },
+      onTourEnd: () => {},
+      getZoomDistance: () => {
+        // Convert zoomLevel (10–100) → camera distance (1660–400)
+        const z = get(globeStore.zoomLevel);
+        return 1800 - (z / 100) * 1400;
+      },
+    });
 
     // ── Wire renderer callbacks ─────────────────────────────────────────────
 
@@ -54,6 +83,31 @@
       if (node) {
         selectedNodeId.set(node.id);
         globeStore.lockedNode.set(node);
+
+        // Explosion effect
+        const entry = renderer!.nodeMeshes.find(g => g.data.id === node.id);
+        if (entry && nodeExplosion) {
+          const color = new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#00d4ff');
+          nodeExplosion.explode(entry.mesh.position.clone(), color);
+        }
+
+        // Pulse wave to connected nodes
+        if (entry && connectionPulse && node.connections) {
+          const targets: THREE.Vector3[] = [];
+          for (const connId of node.connections) {
+            const connEntry = renderer!.nodeMeshes.find(g => g.data.id === connId);
+            if (connEntry) targets.push(connEntry.mesh.position.clone());
+          }
+          if (targets.length > 0) {
+            const color = new THREE.Color(getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#00d4ff');
+            connectionPulse.fire(entry.mesh.position.clone(), targets, color);
+          }
+        }
+
+        // Node trail
+        if (entry && nodeTrail) {
+          nodeTrail.addPoint(entry.mesh.position.clone());
+        }
       } else {
         selectedNodeId.set(null);
         globeStore.lockedNode.set(null);
@@ -112,7 +166,8 @@
     // ── React to theme changes ──────────────────────────────────────────────
     const unsubTheme = theme.subscribe(t => {
       renderer?.updateTheme(t);
-      electricArcs?.setEnabled(t === 'electric');
+      electricArcs?.setTheme(t);
+      electricArcs?.setEnabled(true);
     });
 
     // ── Electric arc effect stores ────────────────────────────────────────
@@ -158,6 +213,13 @@
       if (renderer) renderer.controls.autoRotateSpeed = v;
     });
 
+    // ── React to zoomLevel store ──────────────────────────────────────────────
+    let zoomFirst = true; // skip initial fire to avoid flyTo on mount
+    const unsubZoom = globeStore.zoomLevel.subscribe(v => {
+      if (zoomFirst) { zoomFirst = false; return; }
+      renderer?.setZoom(v);
+    });
+
     // ── React to cometEnabled store ──────────────────────────────────────────
     const unsubComet = globeStore.cometEnabled.subscribe(v => {
       if (comets) comets.setEnabled(v);
@@ -191,6 +253,28 @@
     };
     document.addEventListener('kg:flyto', handleFlyTo);
 
+    // ── Listen for kg:autotour events ─────────────────────────────────────
+    const handleAutoTour = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!renderer || !autoTour) return;
+      if (detail?.action === 'start') {
+        const tourNodes = renderer.nodeMeshes.map(entry => ({
+          data: entry.data,
+          position: entry.mesh.position.clone(),
+        }));
+        autoTour.start(tourNodes);
+      } else if (detail?.action === 'stop') {
+        autoTour.stop();
+      }
+    };
+    document.addEventListener('kg:autotour', handleAutoTour);
+
+    // ── Tour speed subscription ───────────────────────────────────────────
+    const unsubTourSpeed = globeStore.tourSpeed.subscribe(v => {
+      // v is multiplier: 1 = 3s, 2 = 1.5s, 0.5 = 6s
+      if (autoTour) autoTour.setPauseDuration(3 / Math.max(0.1, v));
+    });
+
     // ── Resize ───────────────────────────────────────────────────────────────
     _resizeHandler = () => renderer?.resize();
     window.addEventListener('resize', _resizeHandler);
@@ -221,6 +305,15 @@
         electricArcs.update(0.016);
       }
 
+      // ── Node explosion update ─────────────────────────────────────────────
+      if (nodeExplosion) nodeExplosion.update(0.016);
+
+      // ── Connection pulse update ───────────────────────────────────────────
+      if (connectionPulse) connectionPulse.update(0.016);
+
+      // ── Auto tour update ──────────────────────────────────────────────────
+      if (autoTour) autoTour.update(0.016);
+
       // ── Comet trails update ────────────────────────────────────────────────
       if (comets && wasd) {
         comets.update(
@@ -240,6 +333,7 @@
         showDots:      get(globeStore.showDots),
         showLinks:     get(globeStore.showLinks),
         globeOpacity:  get(globeStore.globeOpacity),
+        dotBrightness: get(globeStore.dotBrightness),
       });
     }
 
@@ -254,6 +348,7 @@
       unsubTheme();
       unsubAutoRotate();
       unsubRotateSpeed();
+      unsubZoom();
       unsubComet();
       unsubCats();
       unsubElecArcs();
@@ -267,6 +362,8 @@
       unsubSparkInt();
       unsubSparkRate();
       document.removeEventListener('kg:flyto', handleFlyTo);
+      document.removeEventListener('kg:autotour', handleAutoTour);
+      unsubTourSpeed();
     };
   });
 
@@ -285,6 +382,10 @@
     wasd?.dispose();
     comets?.dispose();
     electricArcs?.dispose();
+    nodeExplosion?.dispose();
+    connectionPulse?.dispose();
+    nodeTrail?.dispose();
+    autoTour?.dispose();
   });
 
   // ---------------------------------------------------------------------------

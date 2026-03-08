@@ -7,6 +7,7 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #9637 | 4:39 PM | 🟣 | Added Tour Speed State Variable to Globe Controls | ~228 |
 | #9555 | 2:33 PM | 🟣 | Added electric theme effect controls (Lightning, Globe Arcs, Plasma Aura) | ~497 |
 | #9510 | 1:59 PM | ⚖️ | Architecture plan for collapsible panels and settings persistence | ~745 |
 | #9506 | 1:56 PM | 🟣 | Theme Effect Controls for Globe Panel | ~598 |

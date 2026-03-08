@@ -9,13 +9,102 @@
  *   5. Energy wisps  — short curved tendrils extending from the surface
  *   6. Spark burst   — radial lightning discharge from globe center (periodic pulse)
  *
- * Only active when the "electric" theme is selected.
+ * Active on all themes — colors adapt to the element's identity.
  */
 
 import * as THREE from 'three';
 import { GLOBE_RADIUS } from '../constants';
 
 const R = GLOBE_RADIUS;
+
+// ── Per-theme color palettes ─────────────────────────────────────────────────
+
+interface ThemePalette {
+  /** Main bright line color (arcs, bolts) */
+  bright: number;
+  /** Glow/bloom color behind arcs */
+  glow: number;
+  /** Orbit ring main color */
+  ring: number;
+  /** Orbit ring glow color */
+  ringGlow: number;
+  /** Wisp tendril color */
+  wisp: number;
+  /** Bolt fork color */
+  fork: number;
+  /** Aura gradient: [inner r,g,b  →  outer r,g,b] */
+  aura: { r: number; g: number; b: number }[];
+  /** Core gradient: [center r,g,b  →  edge r,g,b] */
+  core: { r: number; g: number; b: number }[];
+  /** Flash gradient: [center r,g,b  →  edge r,g,b] */
+  flash: { r: number; g: number; b: number }[];
+}
+
+const THEME_PALETTES: Record<string, ThemePalette> = {
+  electric: {
+    bright: 0xddeeff, glow: 0x4090ff, ring: 0x80c0ff, ringGlow: 0x3060ff,
+    wisp: 0xa0d8ff, fork: 0xc0d8ff,
+    aura:  [{ r: 30, g: 80, b: 200 }, { r: 50, g: 120, b: 255 }],
+    core:  [{ r: 200, g: 230, b: 255 }, { r: 30, g: 70, b: 200 }],
+    flash: [{ r: 200, g: 230, b: 255 }, { r: 40, g: 100, b: 255 }],
+  },
+  fire: {
+    bright: 0xffddaa, glow: 0xff6020, ring: 0xff8040, ringGlow: 0xcc3300,
+    wisp: 0xffaa44, fork: 0xffcc66,
+    aura:  [{ r: 200, g: 60, b: 10 }, { r: 255, g: 120, b: 30 }],
+    core:  [{ r: 255, g: 220, b: 150 }, { r: 200, g: 50, b: 10 }],
+    flash: [{ r: 255, g: 200, b: 100 }, { r: 255, g: 60, b: 10 }],
+  },
+  winter: {
+    bright: 0xeeffff, glow: 0x40aaff, ring: 0x90d0ff, ringGlow: 0x3080cc,
+    wisp: 0xb0e0ff, fork: 0xd0eeff,
+    aura:  [{ r: 30, g: 100, b: 200 }, { r: 80, g: 160, b: 255 }],
+    core:  [{ r: 220, g: 240, b: 255 }, { r: 40, g: 100, b: 200 }],
+    flash: [{ r: 220, g: 240, b: 255 }, { r: 60, g: 140, b: 255 }],
+  },
+  galaxy: {
+    bright: 0xeeccff, glow: 0x9040ff, ring: 0xb070ff, ringGlow: 0x6030cc,
+    wisp: 0xc090ff, fork: 0xddaaff,
+    aura:  [{ r: 120, g: 40, b: 200 }, { r: 170, g: 80, b: 255 }],
+    core:  [{ r: 240, g: 200, b: 255 }, { r: 100, g: 40, b: 200 }],
+    flash: [{ r: 230, g: 200, b: 255 }, { r: 120, g: 50, b: 255 }],
+  },
+  void: {
+    bright: 0xee99ff, glow: 0xaa20dd, ring: 0xcc44ff, ringGlow: 0x8800bb,
+    wisp: 0xdd77ff, fork: 0xeeaaff,
+    aura:  [{ r: 150, g: 20, b: 180 }, { r: 200, g: 60, b: 240 }],
+    core:  [{ r: 250, g: 180, b: 255 }, { r: 130, g: 20, b: 180 }],
+    flash: [{ r: 240, g: 180, b: 255 }, { r: 160, g: 30, b: 220 }],
+  },
+  aurora: {
+    bright: 0xaaffcc, glow: 0x20cc70, ring: 0x60ffaa, ringGlow: 0x20aa60,
+    wisp: 0x80ffbb, fork: 0xbbffdd,
+    aura:  [{ r: 20, g: 160, b: 80 }, { r: 60, g: 220, b: 130 }],
+    core:  [{ r: 200, g: 255, b: 220 }, { r: 20, g: 150, b: 80 }],
+    flash: [{ r: 200, g: 255, b: 220 }, { r: 30, g: 200, b: 100 }],
+  },
+  rain: {
+    bright: 0xbbccdd, glow: 0x5070aa, ring: 0x7090bb, ringGlow: 0x405880,
+    wisp: 0x8099bb, fork: 0xaabbcc,
+    aura:  [{ r: 50, g: 70, b: 120 }, { r: 80, g: 110, b: 160 }],
+    core:  [{ r: 190, g: 210, b: 230 }, { r: 50, g: 70, b: 130 }],
+    flash: [{ r: 200, g: 215, b: 235 }, { r: 60, g: 90, b: 160 }],
+  },
+  dark: {
+    bright: 0xaaddff, glow: 0x3080cc, ring: 0x60a0dd, ringGlow: 0x2060aa,
+    wisp: 0x80bbee, fork: 0xaaccee,
+    aura:  [{ r: 20, g: 70, b: 160 }, { r: 40, g: 100, b: 200 }],
+    core:  [{ r: 180, g: 220, b: 255 }, { r: 20, g: 60, b: 160 }],
+    flash: [{ r: 180, g: 220, b: 255 }, { r: 30, g: 80, b: 200 }],
+  },
+  light: {
+    bright: 0xffeedd, glow: 0xcc9944, ring: 0xddbb66, ringGlow: 0xaa8833,
+    wisp: 0xddcc88, fork: 0xeeddaa,
+    aura:  [{ r: 180, g: 140, b: 50 }, { r: 220, g: 180, b: 80 }],
+    core:  [{ r: 255, g: 240, b: 200 }, { r: 180, g: 130, b: 40 }],
+    flash: [{ r: 255, g: 240, b: 200 }, { r: 200, g: 150, b: 50 }],
+  },
+};
 
 // ── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -109,6 +198,7 @@ export class GlobeElectricArcs {
   private _orbitSpeed = 1;   // 0.25–3
   private _coreGlow = 1;     // 0.2–3
   private _time = 0;
+  private _palette: ThemePalette = THEME_PALETTES.electric;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -129,35 +219,42 @@ export class GlobeElectricArcs {
     c.height = size;
     const ctx = c.getContext('2d')!;
     const cx = size / 2;
+    const p = this._palette.aura;
+    const i = p[0], o = p[1];
 
-    // Soft diffuse glow — no visible ring edge
     const g1 = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx);
-    g1.addColorStop(0,    'rgba(30,80,200,0)');
-    g1.addColorStop(0.35, 'rgba(30,80,200,0)');
-    g1.addColorStop(0.5,  'rgba(40,100,255,0.02)');
-    g1.addColorStop(0.6,  'rgba(50,120,255,0.04)');
-    g1.addColorStop(0.7,  'rgba(40,100,240,0.03)');
-    g1.addColorStop(0.8,  'rgba(30,80,200,0.015)');
-    g1.addColorStop(0.9,  'rgba(20,50,150,0.005)');
+    g1.addColorStop(0,    `rgba(${i.r},${i.g},${i.b},0)`);
+    g1.addColorStop(0.35, `rgba(${i.r},${i.g},${i.b},0)`);
+    g1.addColorStop(0.5,  `rgba(${(i.r+o.r)>>1},${(i.g+o.g)>>1},${(i.b+o.b)>>1},0.02)`);
+    g1.addColorStop(0.6,  `rgba(${o.r},${o.g},${o.b},0.04)`);
+    g1.addColorStop(0.7,  `rgba(${(i.r+o.r)>>1},${(i.g+o.g)>>1},${(i.b+o.b)>>1},0.03)`);
+    g1.addColorStop(0.8,  `rgba(${i.r},${i.g},${i.b},0.015)`);
+    g1.addColorStop(0.9,  `rgba(${i.r>>1},${i.g>>1},${i.b>>1},0.005)`);
     g1.addColorStop(1,    'rgba(0,0,0,0)');
     ctx.fillStyle = g1;
     ctx.fillRect(0, 0, size, size);
 
-    this.auraTexture = new THREE.CanvasTexture(c);
-    this.auraTexture.needsUpdate = true;
+    if (this.auraTexture) {
+      // Rebuild existing texture
+      this.auraTexture.image = c;
+      this.auraTexture.needsUpdate = true;
+    } else {
+      this.auraTexture = new THREE.CanvasTexture(c);
+      this.auraTexture.needsUpdate = true;
 
-    this.auraMat = new THREE.SpriteMaterial({
-      map: this.auraTexture,
-      transparent: true,
-      opacity: 0.5,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
+      this.auraMat = new THREE.SpriteMaterial({
+        map: this.auraTexture,
+        transparent: true,
+        opacity: 0.5,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
 
-    this.auraSprite = new THREE.Sprite(this.auraMat);
-    const auraScale = R * 3.5;
-    this.auraSprite.scale.set(auraScale, auraScale, 1);
-    this.group.add(this.auraSprite);
+      this.auraSprite = new THREE.Sprite(this.auraMat);
+      const auraScale = R * 3.5;
+      this.auraSprite.scale.set(auraScale, auraScale, 1);
+      this.group.add(this.auraSprite);
+    }
   }
 
   // ── Core glow ─────────────────────────────────────────────────────────────
@@ -169,34 +266,41 @@ export class GlobeElectricArcs {
     c.height = size;
     const ctx = c.getContext('2d')!;
     const cx = size / 2;
+    const p = this._palette.core;
+    const hi = p[0], lo = p[1];
+    const mid = { r: (hi.r + lo.r) >> 1, g: (hi.g + lo.g) >> 1, b: (hi.b + lo.b) >> 1 };
 
-    // Bright blue-white core — much tighter and brighter than the aura
     const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx * 0.85);
     g.addColorStop(0,    'rgba(255,255,255,0.95)');
-    g.addColorStop(0.08, 'rgba(200,230,255,0.85)');
-    g.addColorStop(0.2,  'rgba(120,180,255,0.6)');
-    g.addColorStop(0.4,  'rgba(60,120,255,0.3)');
-    g.addColorStop(0.65, 'rgba(30,70,200,0.12)');
-    g.addColorStop(0.85, 'rgba(10,30,120,0.04)');
+    g.addColorStop(0.08, `rgba(${hi.r},${hi.g},${hi.b},0.85)`);
+    g.addColorStop(0.2,  `rgba(${mid.r},${mid.g},${mid.b},0.6)`);
+    g.addColorStop(0.4,  `rgba(${(mid.r+lo.r)>>1},${(mid.g+lo.g)>>1},${(mid.b+lo.b)>>1},0.3)`);
+    g.addColorStop(0.65, `rgba(${lo.r},${lo.g},${lo.b},0.12)`);
+    g.addColorStop(0.85, `rgba(${lo.r>>1},${lo.g>>1},${lo.b>>1},0.04)`);
     g.addColorStop(1,    'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, size, size);
 
-    this.coreTexture = new THREE.CanvasTexture(c);
-    this.coreTexture.needsUpdate = true;
+    if (this.coreTexture) {
+      this.coreTexture.image = c;
+      this.coreTexture.needsUpdate = true;
+    } else {
+      this.coreTexture = new THREE.CanvasTexture(c);
+      this.coreTexture.needsUpdate = true;
 
-    this.coreMat = new THREE.SpriteMaterial({
-      map: this.coreTexture,
-      transparent: true,
-      opacity: 0.7,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
+      this.coreMat = new THREE.SpriteMaterial({
+        map: this.coreTexture,
+        transparent: true,
+        opacity: 0.7,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
 
-    this.coreSprite = new THREE.Sprite(this.coreMat);
-    const coreScale = R * 1.5;
-    this.coreSprite.scale.set(coreScale, coreScale, 1);
-    this.group.add(this.coreSprite);
+      this.coreSprite = new THREE.Sprite(this.coreMat);
+      const coreScale = R * 1.5;
+      this.coreSprite.scale.set(coreScale, coreScale, 1);
+      this.group.add(this.coreSprite);
+    }
   }
 
   // ── Orbit rings ───────────────────────────────────────────────────────────
@@ -232,7 +336,7 @@ export class GlobeElectricArcs {
       geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 
       const mat = new THREE.LineBasicMaterial({
-        color: 0x80c0ff,
+        color: this._palette.ring,
         transparent: true,
         opacity: 0.15 + Math.random() * 0.15,
         blending: THREE.AdditiveBlending,
@@ -243,7 +347,7 @@ export class GlobeElectricArcs {
 
       // Glow line (slightly larger, lower opacity)
       const glowMat = new THREE.LineBasicMaterial({
-        color: 0x3060ff,
+        color: this._palette.ringGlow,
         transparent: true,
         opacity: 0.08,
         blending: THREE.AdditiveBlending,
@@ -316,7 +420,7 @@ export class GlobeElectricArcs {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 
     const mat = new THREE.LineBasicMaterial({
-      color: 0xddeeff,
+      color: this._palette.bright,
       transparent: true,
       opacity: 0.9,
       blending: THREE.AdditiveBlending,
@@ -328,7 +432,7 @@ export class GlobeElectricArcs {
     this.group.add(line);
 
     const glowMat = new THREE.LineBasicMaterial({
-      color: 0x4090ff,
+      color: this._palette.glow,
       transparent: true,
       opacity: 0.35,
       blending: THREE.AdditiveBlending,
@@ -383,7 +487,7 @@ export class GlobeElectricArcs {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 
     const mat = new THREE.LineBasicMaterial({
-      color: 0xa0d8ff,
+      color: this._palette.wisp,
       transparent: true,
       opacity: 0.6,
       blending: THREE.AdditiveBlending,
@@ -406,33 +510,40 @@ export class GlobeElectricArcs {
     c.height = size;
     const ctx = c.getContext('2d')!;
     const cx = size / 2;
+    const p = this._palette.flash;
+    const hi = p[0], lo = p[1];
+    const mid = { r: (hi.r + lo.r) >> 1, g: (hi.g + lo.g) >> 1, b: (hi.b + lo.b) >> 1 };
 
-    // Intense white-blue flash for burst moment
     const g = ctx.createRadialGradient(cx, cx, 0, cx, cx, cx * 0.7);
     g.addColorStop(0,    'rgba(255,255,255,1)');
-    g.addColorStop(0.1,  'rgba(200,230,255,0.9)');
-    g.addColorStop(0.3,  'rgba(100,170,255,0.5)');
-    g.addColorStop(0.6,  'rgba(40,100,255,0.15)');
+    g.addColorStop(0.1,  `rgba(${hi.r},${hi.g},${hi.b},0.9)`);
+    g.addColorStop(0.3,  `rgba(${mid.r},${mid.g},${mid.b},0.5)`);
+    g.addColorStop(0.6,  `rgba(${lo.r},${lo.g},${lo.b},0.15)`);
     g.addColorStop(1,    'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, size, size);
 
-    this.sparkFlashTexture = new THREE.CanvasTexture(c);
-    this.sparkFlashTexture.needsUpdate = true;
+    if (this.sparkFlashTexture) {
+      this.sparkFlashTexture.image = c;
+      this.sparkFlashTexture.needsUpdate = true;
+    } else {
+      this.sparkFlashTexture = new THREE.CanvasTexture(c);
+      this.sparkFlashTexture.needsUpdate = true;
 
-    this.sparkFlashMat = new THREE.SpriteMaterial({
-      map: this.sparkFlashTexture,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
+      this.sparkFlashMat = new THREE.SpriteMaterial({
+        map: this.sparkFlashTexture,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
 
-    this.sparkFlash = new THREE.Sprite(this.sparkFlashMat);
-    const flashScale = R * 2.5;
-    this.sparkFlash.scale.set(flashScale, flashScale, 1);
-    this.sparkFlash.visible = false;
-    this.group.add(this.sparkFlash);
+      this.sparkFlash = new THREE.Sprite(this.sparkFlashMat);
+      const flashScale = R * 2.5;
+      this.sparkFlash.scale.set(flashScale, flashScale, 1);
+      this.sparkFlash.visible = false;
+      this.group.add(this.sparkFlash);
+    }
   }
 
   // ── Spark bolt generation ───────────────────────────────────────────────
@@ -451,7 +562,7 @@ export class GlobeElectricArcs {
     mainGeo.setAttribute('position', new THREE.Float32BufferAttribute(mainPositions, 3));
 
     const mainMat = new THREE.LineBasicMaterial({
-      color: 0xeef4ff,
+      color: this._palette.bright,
       transparent: true,
       opacity: 1.0,
       blending: THREE.AdditiveBlending,
@@ -464,7 +575,7 @@ export class GlobeElectricArcs {
 
     // Glow line for main bolt
     const glowMat = new THREE.LineBasicMaterial({
-      color: 0x5090ff,
+      color: this._palette.glow,
       transparent: true,
       opacity: 0.4,
       blending: THREE.AdditiveBlending,
@@ -503,7 +614,7 @@ export class GlobeElectricArcs {
       forkGeo.setAttribute('position', new THREE.Float32BufferAttribute(forkPositions, 3));
 
       const forkMat = new THREE.LineBasicMaterial({
-        color: 0xc0d8ff,
+        color: this._palette.fork,
         transparent: true,
         opacity: 0.7,
         blending: THREE.AdditiveBlending,
@@ -713,11 +824,11 @@ export class GlobeElectricArcs {
       const t = bolt.life / bolt.maxLife;
       const flicker = t * (0.2 + 0.8 * Math.abs(Math.sin(this._time * 40 + i * 11))) * this._sparkIntensity;
 
-      for (const line of bolt.lines) {
-        const mat = line.material as THREE.LineBasicMaterial;
-        // Core bolts get full flicker, glow/forks get reduced
-        const isGlow = mat.color.b > 0.9 && mat.color.r < 0.5;
-        mat.opacity = Math.min(isGlow ? flicker * 0.4 : flicker, 1);
+      for (let li = 0; li < bolt.lines.length; li++) {
+        const mat = bolt.lines[li].material as THREE.LineBasicMaterial;
+        // First line = main bolt (full flicker), rest = glow/forks (reduced)
+        const isSecondary = li === 1; // glow line is always index 1
+        mat.opacity = Math.min(isSecondary ? flicker * 0.4 : flicker, 1);
       }
     }
 
@@ -768,6 +879,17 @@ export class GlobeElectricArcs {
       }
       this.sparkBolts = [];
     }
+  }
+
+  /** Switch color palette to match the active theme's element identity. */
+  setTheme(themeName: string): void {
+    this._palette = THEME_PALETTES[themeName] || THEME_PALETTES.dark;
+    // Rebuild canvas-based textures with new colors
+    this._buildAura();
+    this._buildCore();
+    this._buildSparkFlash();
+    // Rebuild orbit rings with new colors
+    this._rebuildOrbitRings();
   }
 
   setShowArcs(v: boolean): void { this._showArcs = v; }

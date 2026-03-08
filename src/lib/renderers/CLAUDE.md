@@ -7,6 +7,10 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #9617 | 3:54 PM | 🔴 | Fixed spark bolt glow line to respect theme palette | ~370 |
+| #9593 | 3:24 PM | 🟣 | Connection-Based Node Sizing for Hub Visualization | ~726 |
+| #9584 | 3:20 PM | 🟣 | Added dot sphere gradients for Void, Aurora, and Rain themes | ~416 |
+| #9582 | 3:18 PM | 🟣 | Animated Connection Pulse System for Globe Interactions | ~781 |
 | #9567 | 2:39 PM | ✅ | Globe Opacity Parameter Added to Animation Interface | ~575 |
 | #9536 | 2:24 PM | ✅ | Added default setting for lightning effects toggle | ~299 |
 | #9535 | " | 🔄 | Added showLightning field to EffectSettings interface | ~299 |

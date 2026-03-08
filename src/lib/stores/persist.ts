@@ -14,7 +14,7 @@ import type { Theme } from './appState';
 import * as globe from './globeState';
 import * as fx from './themeEffects';
 
-const VALID_THEMES: readonly Theme[] = ['dark', 'light', 'fire', 'winter', 'galaxy', 'electric'];
+const VALID_THEMES: readonly Theme[] = ['dark', 'light', 'fire', 'winter', 'galaxy', 'electric', 'void', 'aurora', 'rain'];
 
 // ── Debounce helper for sliders ──────────────────────────────────────────────
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -62,6 +62,8 @@ function buildEntries(): PersistEntry<any>[] {
     num(globe.rotateSpeed,    'globe.rotateSpeed', 0.35, 0.05, 2),
     num(globe.zoomLevel,      'globe.zoom',        55,   10, 100),
     num(globe.globeOpacity,   'globe.opacity',     1,    0.1, 1),
+    num(globe.dotBrightness,  'globe.dotBright',   1,    0, 20),
+    num(globe.tourSpeed,      'globe.tourSpeed',   1,    0, 20),
 
     // Theme effects (all numeric: 0–20 range covers 0%–2000%)
     num(fx.effectDensity, 'fx.density', 1,    0, 20),
@@ -89,6 +91,15 @@ function buildEntries(): PersistEntry<any>[] {
     bool(fx.borderEnabled,    'fx.border',         true),
     num(fx.borderIntensity,   'fx.borderIntensity', 1,   0, 20),
     num(fx.borderSpeed,       'fx.borderSpeed',     1,   0, 20),
+
+    // Black hole effect
+    bool(fx.blackholeEnabled, 'fx.bhEnabled',      false),
+    num(fx.blackholeSize,     'fx.bhSize',          1,   0, 20),
+    num(fx.blackholeSpeed,    'fx.bhSpeed',         1,   0, 20),
+    num(fx.blackholeGlow,     'fx.bhGlow',          1,   0, 20),
+    num(fx.blackholeWidth,    'fx.bhWidth',         1,   0, 20),
+    num(fx.blackholeHeight,   'fx.bhHeight',        1,   0, 20),
+    num(fx.blackholeHue,      'fx.bhHue',         280,   0, 360),
   ];
 }
 

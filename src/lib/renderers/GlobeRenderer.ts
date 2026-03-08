@@ -45,6 +45,7 @@ export interface AnimateParams {
   showDots: boolean;
   showLinks: boolean;
   globeOpacity: number;
+  dotBrightness: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,6 +306,18 @@ export class GlobeRenderer {
       n._gz = p.z * R;
     });
 
+    // ── Build connections map per node (used for pulse effects + size scaling) ─
+    const connectionMap = new Map<string, string[]>();
+    nodes.forEach(n => connectionMap.set(n.id, []));
+    links.forEach(l => {
+      const sid = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+      const tid = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+      connectionMap.get(sid)?.push(tid);
+      connectionMap.get(tid)?.push(sid);
+    });
+    // Attach connection ids directly onto node objects for external consumers
+    nodes.forEach(n => { n.connections = connectionMap.get(n.id) ?? []; });
+
     // ── Ensure textures exist ─────────────────────────────────────────────────
     if (!this._dotTexture)  this._dotTexture  = this._createDotTexture(128);
     if (!this._glowTexture) this._glowTexture = this._createGlowRingTexture(128);
@@ -313,7 +326,10 @@ export class GlobeRenderer {
     nodes.forEach(n => {
       const cat = CATEGORIES[n.cat] || CATEGORIES['meta'];
       const colorHex = parseColorToHex(cat.color);
-      const r = Math.min(14, 4 + (n.refs || 0) * 1.5);
+      const baseSize = Math.min(14, 4 + (n.refs || 0) * 1.5);
+      const connectionCount = (connectionMap.get(n.id) ?? []).length;
+      const sizeMultiplier = 1 + Math.min(connectionCount, 10) * 0.15; // 1.0 to 2.5× based on connections
+      const r = Math.min(20, baseSize * sizeMultiplier);
 
       // Solid dot sprite (always faces camera)
       const mat = new THREE.SpriteMaterial({
@@ -421,8 +437,9 @@ export class GlobeRenderer {
         (0.02 + 0.04 * params.glowLevel) * gOp;
     }
     if (this.dotParticles) {
+      const dB = params.dotBrightness;
       (this.dotParticles.material as THREE.PointsMaterial).opacity =
-        (0.25 + 0.25 * params.glowLevel) * gOp;
+        (0.25 + 0.25 * params.glowLevel) * gOp * dB;
     }
 
     // ── Pulse animation ────────────────────────────────────────────────────
@@ -465,9 +482,10 @@ export class GlobeRenderer {
 
       // Dot sphere subtle breathing
       if (this.dotParticles && params.showDots) {
+        const dB = params.dotBrightness;
         const dotPulse = Math.sin(this.pulseTime * 0.7);
         (this.dotParticles.material as THREE.PointsMaterial).opacity =
-          (0.25 + 0.25 * params.glowLevel) + dotPulse * 0.05;
+          ((0.25 + 0.25 * params.glowLevel) + dotPulse * 0.05) * gOp * dB;
         const dotScale = 1 + dotPulse * 0.005;
         this.dotParticles.scale.setScalar(dotScale);
       }
@@ -700,6 +718,17 @@ export class GlobeRenderer {
   /** Fly camera back to the default position (straight ahead, dist=900). */
   resetPosition(): void {
     this.flyTo(new THREE.Vector3(0, 0, DEFAULT_CAM_DIST), DEFAULT_CAM_DIST);
+  }
+
+  /**
+   * Set camera distance from the zoom slider value (10–100).
+   * Preserves current orbit direction, only changes distance.
+   */
+  setZoom(sliderVal: number): void {
+    const dist = 1800 - (sliderVal / 100) * 1400; // 10→1660, 55→1030, 100→400
+    const dir = this.camera.position.clone().normalize();
+    const targetPos = dir.multiplyScalar(dist);
+    this.flyTo(targetPos, dist);
   }
 
   // ---------------------------------------------------------------------------
@@ -972,7 +1001,8 @@ export class GlobeRenderer {
 
     // Wireframe color per theme
     const wireColors: Record<string, number> = {
-      dark: 0x00d4ff, light: 0x1e40af, fire: 0xff6a00, winter: 0x7ec8ff, galaxy: 0xb46aff, electric: 0x3c8cff,
+      dark: 0x00d4ff, light: 0xe0aa20, fire: 0xff6a00, winter: 0x7ec8ff, galaxy: 0xb46aff, electric: 0x3c8cff,
+      void: 0xb040ff, aurora: 0x40ffa0, rain: 0x6090c0,
     };
     if (this.wireframe) {
       (this.wireframe.material as THREE.MeshBasicMaterial).color.setHex(
@@ -1021,11 +1051,32 @@ export class GlobeRenderer {
             t * 1.0 + (1 - t) * 0.9,
           );
         } else if (themeName === 'light') {
-          // Blue gradient for light theme
+          // Golden gradient for light (ธาตุสว่าง): amber bottom → bright gold top
           colors.push(
-            t * 30  / 255,
-            t * 64  / 255,
-            175     / 255,
+            t * 1.0  + (1 - t) * 0.7,
+            t * 0.75 + (1 - t) * 0.45,
+            t * 0.15 + (1 - t) * 0.05,
+          );
+        } else if (themeName === 'void') {
+          // Purple bottom → magenta top gradient
+          colors.push(
+            t * 0.85 + (1 - t) * 0.55,
+            t * 0.1  + (1 - t) * 0.05,
+            t * 0.9  + (1 - t) * 0.75,
+          );
+        } else if (themeName === 'aurora') {
+          // Green bottom → teal top gradient
+          colors.push(
+            t * 0.15 + (1 - t) * 0.05,
+            t * 1.0  + (1 - t) * 0.65,
+            t * 0.6  + (1 - t) * 0.35,
+          );
+        } else if (themeName === 'rain') {
+          // Grey-blue bottom → steel blue top gradient
+          colors.push(
+            t * 0.38 + (1 - t) * 0.25,
+            t * 0.56 + (1 - t) * 0.38,
+            t * 0.75 + (1 - t) * 0.55,
           );
         } else {
           // Cyan top → purple bottom (dark default)

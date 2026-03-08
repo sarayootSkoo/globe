@@ -37,6 +37,9 @@
   // Preview
   import PreviewOverlay from './components/preview/PreviewOverlay.svelte';
 
+  // Keyboard help
+  import KeyboardHelp from './components/controls/KeyboardHelp.svelte';
+
   let loaded = $state(false);
   let wasdPopupVisible = $state(false);
   let wasdKeys = $state({ w: false, a: false, s: false, d: false, q: false, shift: false });
@@ -108,3 +111,5 @@
   />
   <PreviewOverlay />
 {/if}
+
+<KeyboardHelp />

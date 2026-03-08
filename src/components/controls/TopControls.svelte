@@ -27,6 +27,9 @@
     { value: 'winter', label: '❄ Winter' },
     { value: 'galaxy', label: '🌌 Galaxy' },
     { value: 'electric', label: '⚡ Electric' },
+    { value: 'void', label: '🕳 Void' },
+    { value: 'aurora', label: '🌌 Aurora' },
+    { value: 'rain', label: '🌧 Rain' },
   ];
 
   let glowLabel = $derived((): string => {
@@ -126,6 +129,15 @@
   :global([data-theme="electric"]) .ctrl-select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%233c8cff'/%3E%3C/svg%3E");
   }
+  :global([data-theme="void"]) .ctrl-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23b040ff'/%3E%3C/svg%3E");
+  }
+  :global([data-theme="aurora"]) .ctrl-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2340ffa0'/%3E%3C/svg%3E");
+  }
+  :global([data-theme="rain"]) .ctrl-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236090c0'/%3E%3C/svg%3E");
+  }
   .ctrl-select:hover {
     border-color: var(--accent);
   }
@@ -152,6 +164,18 @@
   :global([data-theme="electric"]) .ctrl-select option {
     background: #040c1e;
     color: #d0e4ff;
+  }
+  :global([data-theme="void"]) .ctrl-select option {
+    background: #050008;
+    color: #d8c0f0;
+  }
+  :global([data-theme="aurora"]) .ctrl-select option {
+    background: #020d0a;
+    color: #c0f0e0;
+  }
+  :global([data-theme="rain"]) .ctrl-select option {
+    background: #0a0c10;
+    color: #b0c0d0;
   }
   .theme-select {
     min-width: 100px;

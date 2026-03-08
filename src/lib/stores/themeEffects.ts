@@ -45,3 +45,12 @@ export const showBgMesh = writable<boolean>(true);
 export const borderEnabled = writable<boolean>(true);
 export const borderIntensity = writable<number>(1);   // 0.2–2, glow strength
 export const borderSpeed = writable<number>(1);        // 0.25–3, animation speed
+
+/** Black hole effect — standalone animated effect available on any theme */
+export const blackholeEnabled = writable<boolean>(false);
+export const blackholeSize = writable<number>(1);      // 0–20: overall scale (0.01x–20x)
+export const blackholeSpeed = writable<number>(1);     // 0–20: animation speed
+export const blackholeGlow = writable<number>(1);      // 0–20: glow intensity
+export const blackholeWidth = writable<number>(1);     // 0–20: horizontal stretch
+export const blackholeHeight = writable<number>(1);    // 0–20: vertical stretch
+export const blackholeHue = writable<number>(280);     // 0–360: color hue (280 = purple default)

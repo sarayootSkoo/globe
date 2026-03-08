@@ -19,12 +19,22 @@ configure({
 export function safeGet<T>(key: string, fallback: T): T {
   try {
     if (typeof window === 'undefined') return fallback;
+    // Pre-check: if raw localStorage value isn't a string, the secure
+    // storage library will throw "Value must be string" during decrypt.
+    // Clear the corrupted entry and return fallback instead.
+    const raw = window.localStorage.getItem(`kg_${key}`);
+    if (raw !== null && typeof raw !== 'string') {
+      window.localStorage.removeItem(`kg_${key}`);
+      return fallback;
+    }
     const val = secureStorage.getItem<T>(key);
     if (val === null || val === undefined) return fallback;
     // Type guard: ensure value matches fallback's type
     if (typeof val !== typeof fallback) return fallback;
     return val;
   } catch {
+    // Corrupted or incompatible data — remove and return fallback
+    try { window.localStorage.removeItem(`kg_${key}`); } catch { /* ignore */ }
     return fallback;
   }
 }

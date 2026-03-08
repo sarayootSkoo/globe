@@ -4,6 +4,8 @@
   import { theme } from '../../lib/stores/appState';
   import type { Theme } from '../../lib/stores/appState';
   import WasdPopup from '../wasd/WasdPopup.svelte';
+  import PresetSystem from './PresetSystem.svelte';
+  import ScreenshotBtn from './ScreenshotBtn.svelte';
 
   // ── Local reactive mirrors of store values ──────────────────────────────────
   let autoRotate   = $state(true);
@@ -17,6 +19,8 @@
   let rotateSpeedVal  = $state(35);   // raw slider value 5–200
   let zoomVal         = $state(55);   // raw slider value 10–100
   let opacityVal      = $state(100);  // raw slider value 10–100 → 0.1–1.0
+  let dotBrightVal    = $state(100);  // raw slider value 0–2000 → 0–20
+  let tourSpeedVal    = $state(100);  // raw slider value 10–500 → 0.1–5
 
   let wasdPopupOpen = $state(false);
 
@@ -60,6 +64,15 @@
   let fxBorderIntVal = $state(100);  // 20–200 → 0.2–2
   let fxBorderSpdVal = $state(100);  // 25–300 → 0.25–3
 
+  // Black hole controls
+  let fxBhEnabled    = $state(false);
+  let fxBhSizeVal    = $state(100);   // 0–2000 → 0–20
+  let fxBhSpeedVal   = $state(100);   // 0–2000 → 0–20
+  let fxBhGlowVal    = $state(100);   // 0–2000 → 0–20
+  let fxBhWidthVal   = $state(100);   // 0–2000 → 0–20
+  let fxBhHeightVal  = $state(100);   // 0–2000 → 0–20
+  let fxBhHueVal     = $state(280);   // 0–360 raw
+
   // ── Subscribe to stores ──────────────────────────────────────────────────────
   $effect(() => {
     const u1  = globeStore.autoRotate.subscribe(v    => { autoRotate    = v; });
@@ -72,6 +85,8 @@
     const u8  = globeStore.rotateSpeed.subscribe(v   => { rotateSpeedVal = Math.round(v * 100); });
     const u9  = globeStore.zoomLevel.subscribe(v     => { zoomVal = v; });
     const u28 = globeStore.globeOpacity.subscribe(v  => { opacityVal = Math.round(v * 100); });
+    const u35 = globeStore.dotBrightness.subscribe(v => { dotBrightVal = Math.round(v * 100); });
+    const u43 = globeStore.tourSpeed.subscribe(v      => { tourSpeedVal = Math.round(v * 100); });
     const u10 = theme.subscribe(v                    => { currentTheme = v; });
     const u11 = fx.effectDensity.subscribe(v         => { fxDensityVal = Math.round(v * 100); });
     const u12 = fx.effectSpeed.subscribe(v           => { fxSpeedVal = Math.round(v * 100); });
@@ -96,16 +111,26 @@
     const u20 = fx.borderEnabled.subscribe(v         => { fxBorder = v; });
     const u21 = fx.borderIntensity.subscribe(v       => { fxBorderIntVal = Math.round(v * 100); });
     const u22 = fx.borderSpeed.subscribe(v           => { fxBorderSpdVal = Math.round(v * 100); });
+    const u36 = fx.blackholeEnabled.subscribe(v      => { fxBhEnabled = v; });
+    const u37 = fx.blackholeSize.subscribe(v         => { fxBhSizeVal = Math.round(v * 100); });
+    const u38 = fx.blackholeSpeed.subscribe(v        => { fxBhSpeedVal = Math.round(v * 100); });
+    const u39 = fx.blackholeGlow.subscribe(v         => { fxBhGlowVal = Math.round(v * 100); });
+    const u40 = fx.blackholeWidth.subscribe(v        => { fxBhWidthVal = Math.round(v * 100); });
+    const u41 = fx.blackholeHeight.subscribe(v       => { fxBhHeightVal = Math.round(v * 100); });
+    const u42 = fx.blackholeHue.subscribe(v          => { fxBhHueVal = Math.round(v); });
     return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9();
                    u10(); u11(); u12(); u13(); u14(); u15(); u16(); u17(); u18(); u19();
                    u20(); u21(); u22(); u23(); u24(); u25(); u26(); u27(); u28();
-                   u29(); u30(); u31(); u32(); u33(); u34(); };
+                   u29(); u30(); u31(); u32(); u33(); u34(); u35();
+                   u36(); u37(); u38(); u39(); u40(); u41(); u42(); u43(); };
   });
 
   // ── Zoom display label ───────────────────────────────────────────────────────
   // 55 is the default (100%). Scale linearly relative to that.
   let zoomLabel    = $derived(Math.round(zoomVal * 100 / 55) + '%');
   let opacityLabel = $derived(opacityVal + '%');
+  let dotBrightLabel = $derived(dotBrightVal + '%');
+  let tourSpeedLabel = $derived(tourSpeedVal + '%');
 
   // ---------------------------------------------------------------------------
   // Toggle handlers
@@ -161,6 +186,18 @@
     globeStore.globeOpacity.set(raw / 100); // 10–100 → 0.1–1.0
   }
 
+  function handleDotBrightness(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    dotBrightVal = raw;
+    globeStore.dotBrightness.set(raw / 100); // 0–2000 → 0–20
+  }
+
+  function handleTourSpeed(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    tourSpeedVal = raw;
+    globeStore.tourSpeed.set(raw / 100); // 10–500 → 0.1–5
+  }
+
   // ---------------------------------------------------------------------------
   // WASD popup
   // ---------------------------------------------------------------------------
@@ -174,6 +211,16 @@
 
   function handleCometToggle(): void {
     toggleComet();
+  }
+
+  // ── Auto tour ───────────────────────────────────────────────────────────────
+  let tourActive = $state(false);
+
+  function toggleAutoTour(): void {
+    tourActive = !tourActive;
+    document.dispatchEvent(new CustomEvent('kg:autotour', {
+      detail: { action: tourActive ? 'start' : 'stop' },
+    }));
   }
 
   // ── Theme effect handlers ──────────────────────────────────────────────────
@@ -251,6 +298,39 @@
     const raw = parseInt((e.target as HTMLInputElement).value, 10);
     fx.borderSpeed.set(raw / 100);
   }
+
+  // ── Black hole handlers ───────────────────────────────────────────────────
+  let fxBhSizeLabel   = $derived(fxBhSizeVal + '%');
+  let fxBhSpeedLabel  = $derived(fxBhSpeedVal + '%');
+  let fxBhGlowLabel   = $derived(fxBhGlowVal + '%');
+  let fxBhWidthLabel  = $derived(fxBhWidthVal + '%');
+  let fxBhHeightLabel = $derived(fxBhHeightVal + '%');
+  let fxBhHueLabel    = $derived(fxBhHueVal + '\u00B0');
+
+  function handleBhSize(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.blackholeSize.set(raw / 100);
+  }
+  function handleBhSpeed(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.blackholeSpeed.set(raw / 100);
+  }
+  function handleBhGlow(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.blackholeGlow.set(raw / 100);
+  }
+  function handleBhWidth(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.blackholeWidth.set(raw / 100);
+  }
+  function handleBhHeight(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.blackholeHeight.set(raw / 100);
+  }
+  function handleBhHue(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.blackholeHue.set(raw);
+  }
 </script>
 
 <div class="panel" id="globe-controls">
@@ -305,6 +385,23 @@
       tabindex="0"
       onkeydown={(e) => e.key === 'Enter' && toggleDots()}
     ></div>
+  </div>
+
+  <!-- Dot Brightness -->
+  <div class="globe-ctrl-row zoom-row">
+    <div class="zoom-header">
+      <span class="globe-ctrl-label">Dot Light</span>
+      <span class="globe-ctrl-label zoom-val">{dotBrightLabel}</span>
+    </div>
+    <input
+      type="range"
+      class="globe-opacity-slider"
+      min="0"
+      max="2000"
+      value={dotBrightVal}
+      title="Dot sphere brightness (0–2000%)"
+      oninput={handleDotBrightness}
+    />
   </div>
 
   <!-- Connections -->
@@ -432,6 +529,36 @@
       &#9000; WASD Controls
     </button>
   </div>
+
+  <!-- Tour & Screenshot -->
+  <div class="globe-ctrl-row" style="justify-content:center; gap: 6px;">
+    <button
+      class="detail-btn"
+      class:tour-active={tourActive}
+      title={tourActive ? 'Stop auto-tour' : 'Start auto-tour'}
+      onclick={toggleAutoTour}
+    >
+      {tourActive ? '■ Stop Tour' : '▶ Auto Tour'}
+    </button>
+    <ScreenshotBtn />
+  </div>
+
+  <!-- Tour Speed -->
+  <div class="globe-ctrl-row zoom-row">
+    <div class="zoom-header">
+      <span class="globe-ctrl-label">Tour Speed</span>
+      <span class="globe-ctrl-label zoom-val">{tourSpeedLabel}</span>
+    </div>
+    <input
+      type="range"
+      class="fx-speed-slider"
+      min="10"
+      max="500"
+      value={tourSpeedVal}
+      title="Auto tour speed (10%=slow, 500%=fast)"
+      oninput={handleTourSpeed}
+    />
+  </div>
   {/if}
 
   <div class="divider"></div>
@@ -523,6 +650,77 @@
     </div>
   {/if}
 
+  <!-- Black Hole Effect -->
+  <div class="globe-ctrl-row">
+    <span class="globe-ctrl-label">Black Hole</span>
+    <div
+      class="globe-toggle"
+      class:on={fxBhEnabled}
+      title="Toggle black hole effect"
+      onclick={() => fx.blackholeEnabled.update(v => !v)}
+      role="switch"
+      aria-checked={fxBhEnabled}
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && fx.blackholeEnabled.update(v => !v)}
+    ></div>
+  </div>
+
+  {#if fxBhEnabled}
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">BH Size</span>
+        <span class="globe-ctrl-label zoom-val">{fxBhSizeLabel}</span>
+      </div>
+      <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhSizeVal}
+        title="Black hole size (0%–2000%)" oninput={handleBhSize} />
+    </div>
+
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">BH Speed</span>
+        <span class="globe-ctrl-label zoom-val">{fxBhSpeedLabel}</span>
+      </div>
+      <input type="range" class="fx-speed-slider" min="0" max="2000" value={fxBhSpeedVal}
+        title="Black hole animation speed (0%–2000%)" oninput={handleBhSpeed} />
+    </div>
+
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">BH Glow</span>
+        <span class="globe-ctrl-label zoom-val">{fxBhGlowLabel}</span>
+      </div>
+      <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhGlowVal}
+        title="Black hole glow intensity (0%–2000%)" oninput={handleBhGlow} />
+    </div>
+
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">BH Width</span>
+        <span class="globe-ctrl-label zoom-val">{fxBhWidthLabel}</span>
+      </div>
+      <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhWidthVal}
+        title="Black hole horizontal stretch (0%–2000%)" oninput={handleBhWidth} />
+    </div>
+
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">BH Height</span>
+        <span class="globe-ctrl-label zoom-val">{fxBhHeightLabel}</span>
+      </div>
+      <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhHeightVal}
+        title="Black hole vertical stretch (0%–2000%)" oninput={handleBhHeight} />
+    </div>
+
+    <div class="globe-ctrl-row fx-slider-row">
+      <div class="zoom-header">
+        <span class="globe-ctrl-label">BH Color</span>
+        <span class="globe-ctrl-label zoom-val">{fxBhHueLabel}</span>
+      </div>
+      <input type="range" class="bh-hue-slider" min="0" max="360" value={fxBhHueVal}
+        title="Black hole color hue (0°–360°)" oninput={handleBhHue} />
+    </div>
+  {/if}
+
   <div class="divider"></div>
 
   <!-- Theme-specific toggles (only show when relevant) -->
@@ -602,7 +800,7 @@
     </div>
   {/if}
 
-  {#if isElectricTheme}
+  <!-- Electric / Energy effects (available on all themes) -->
     <div class="globe-ctrl-row">
       <span class="globe-ctrl-label">Lightning</span>
       <div
@@ -776,10 +974,8 @@
         oninput={handleElecCoreGlow}
       />
     </div>
-  {/if}
 
-  <!-- Density slider (always visible when theme has effects) -->
-  {#if hasThemeEffects}
+  <!-- Density slider (always visible) -->
     <div class="globe-ctrl-row fx-slider-row">
       <div class="zoom-header">
         <span class="globe-ctrl-label">Density</span>
@@ -813,7 +1009,9 @@
       />
     </div>
   {/if}
-  {/if}
+
+  <div class="divider"></div>
+  <PresetSystem />
 </div>
 
 <!-- WASD popup lives here so it shares the cometEnabled state -->
@@ -836,11 +1034,30 @@
     -webkit-backdrop-filter: blur(14px);
     border: 1px solid var(--border);
     border-radius: 4px;
-    padding: 14px 16px;
+    padding: 10px 12px;
+    width: 345px;
     box-shadow: 0 0 20px rgba(0, 212, 255, 0.05);
     transition: border-color 0.3s;
-    /* show by default — parent App hides/shows this panel by class */
     display: block;
+    /* Scrollable when content exceeds viewport */
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent) transparent;
+  }
+  .panel::-webkit-scrollbar {
+    width: 4px;
+  }
+  .panel::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .panel::-webkit-scrollbar-thumb {
+    background: var(--accent);
+    border-radius: 2px;
+    opacity: 0.4;
+  }
+  .panel::-webkit-scrollbar-thumb:hover {
+    background: var(--text);
   }
   .panel:hover {
     border-color: var(--border-hi);
@@ -1100,6 +1317,11 @@
     width: 100%;
     text-align: center;
   }
+  .tour-active {
+    background: rgba(255, 200, 50, 0.15) !important;
+    border-color: #ffc832 !important;
+    color: #ffc832 !important;
+  }
 
   /* Theme Effects sub-title */
   .fx-title {
@@ -1142,6 +1364,47 @@
     background: var(--orange);
     border: 2px solid var(--bg);
     box-shadow: 0 0 5px var(--orange);
+    cursor: pointer;
+  }
+
+  /* Black hole hue slider — rainbow gradient */
+  .bh-hue-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg,
+      hsl(0,80%,50%),
+      hsl(60,80%,50%),
+      hsl(120,80%,50%),
+      hsl(180,80%,50%),
+      hsl(240,80%,50%),
+      hsl(300,80%,50%),
+      hsl(360,80%,50%)
+    );
+    outline: none;
+    cursor: pointer;
+    margin: 2px 0;
+  }
+  .bh-hue-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 6px rgba(255,255,255,0.6);
+    cursor: pointer;
+  }
+  .bh-hue-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 6px rgba(255,255,255,0.6);
     cursor: pointer;
   }
 

@@ -16,6 +16,15 @@
   let speed = 1;
   let currentTheme: Theme = 'dark';
 
+  // Black hole stores
+  let bhEnabled = false;
+  let bhSize = 1;
+  let bhSpeed = 1;
+  let bhGlow = 1;
+  let bhWidth = 1;
+  let bhHeight = 1;
+  let bhHue = 280;
+
   // ── Noise helpers ────────────────────────────────────────────────────────
   function noise(x: number, y: number): number {
     return (
@@ -841,6 +850,348 @@
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // VOID THEME — Black hole with accretion disk + gravitational lensing
+  // ══════════════════════════════════════════════════════════════════════════
+
+  function drawVoid(W: number, H: number, time: number, int: number): void {
+    if (!ctx) return;
+
+    const cx = W / 2;
+    const cy = H / 2;
+    const minDim = Math.min(W, H);
+    const holeR = minDim * 0.06 * int;   // black hole core radius
+    const diskR = minDim * 0.35 * int;   // outer accretion disk radius
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // ── Layer 1: Swirling accretion disk spirals ─────────────────────────
+    const armCount = 5;
+    for (let arm = 0; arm < armCount; arm++) {
+      const armOffset = (arm / armCount) * Math.PI * 2;
+      ctx.beginPath();
+      for (let i = 0; i <= 120; i++) {
+        const t = i / 120;
+        // Logarithmic spiral: r = a * e^(b*theta)
+        const theta = t * Math.PI * 4 + armOffset + time * 0.3;
+        const r = holeR * 1.5 + (diskR - holeR) * t;
+        // Add wobble for organic feel
+        const wobble = Math.sin(theta * 3 + time * 2) * r * 0.04;
+        const x = cx + Math.cos(theta) * (r + wobble);
+        const y = cy + Math.sin(theta) * (r + wobble) * 0.45; // flatten for perspective
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      const fade = 0.08 + 0.04 * Math.sin(time * 1.5 + arm);
+      ctx.strokeStyle = `rgba(160,60,220,${fade * int})`;
+      ctx.lineWidth = 2 + Math.sin(time + arm) * 0.5;
+      ctx.stroke();
+    }
+
+    // ── Layer 2: Bright accretion ring (photon sphere) ───────────────────
+    for (let ring = 0; ring < 3; ring++) {
+      const ringR = holeR * (2.0 + ring * 0.6);
+      const segments = 80;
+      ctx.beginPath();
+      for (let i = 0; i <= segments; i++) {
+        const theta = (i / segments) * Math.PI * 2;
+        // Elliptical (perspective) + subtle pulsation
+        const pulse = 1 + Math.sin(time * 2.5 + ring + theta * 2) * 0.03;
+        const x = cx + Math.cos(theta) * ringR * pulse;
+        const y = cy + Math.sin(theta) * ringR * 0.42 * pulse;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      const ringAlpha = (0.15 - ring * 0.04) * int;
+      ctx.strokeStyle = `rgba(180,140,255,${ringAlpha})`;
+      ctx.lineWidth = (3 - ring) * int;
+      ctx.stroke();
+
+      // Glow duplicate
+      ctx.strokeStyle = `rgba(120,60,200,${ringAlpha * 0.5})`;
+      ctx.lineWidth = (6 - ring * 2) * int;
+      ctx.stroke();
+    }
+
+    // ── Layer 3: Gravitational lensing halo (bright crescent on top) ─────
+    const lensR = holeR * 2.5;
+    // Top crescent — light warped around the black hole
+    const lensG = ctx.createRadialGradient(cx, cy - lensR * 0.3, lensR * 0.6, cx, cy - lensR * 0.3, lensR * 1.5);
+    const lensPulse = 0.7 + 0.3 * Math.sin(time * 1.8);
+    lensG.addColorStop(0, `rgba(200,180,255,${0.2 * int * lensPulse})`);
+    lensG.addColorStop(0.3, `rgba(140,80,220,${0.1 * int * lensPulse})`);
+    lensG.addColorStop(0.6, `rgba(80,20,160,${0.04 * int})`);
+    lensG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = lensG;
+    ctx.fillRect(cx - lensR * 2, cy - lensR * 2, lensR * 4, lensR * 3);
+
+    // Bottom arc — dimmer reflection
+    const lensG2 = ctx.createRadialGradient(cx, cy + lensR * 0.4, lensR * 0.4, cx, cy + lensR * 0.4, lensR * 1.2);
+    lensG2.addColorStop(0, `rgba(140,100,200,${0.08 * int * lensPulse})`);
+    lensG2.addColorStop(0.5, `rgba(80,40,160,${0.03 * int})`);
+    lensG2.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = lensG2;
+    ctx.fillRect(cx - lensR * 2, cy - lensR, lensR * 4, lensR * 3);
+
+    // ── Layer 4: Event horizon glow ring ─────────────────────────────────
+    const horizonPulse = 0.8 + 0.2 * Math.sin(time * 3.2);
+    const horizonG = ctx.createRadialGradient(cx, cy, holeR * 0.8, cx, cy, holeR * 2.5);
+    horizonG.addColorStop(0, 'rgba(0,0,0,0)');
+    horizonG.addColorStop(0.4, `rgba(120,50,200,${0.12 * int * horizonPulse})`);
+    horizonG.addColorStop(0.7, `rgba(180,100,255,${0.08 * int * horizonPulse})`);
+    horizonG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = horizonG;
+    ctx.beginPath();
+    ctx.arc(cx, cy, holeR * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // ── Layer 5: Dark singularity center (drawn OVER everything) ─────────
+    // Use 'source-over' to punch a dark hole
+    const darkG = ctx.createRadialGradient(cx, cy, 0, cx, cy, holeR * 1.8);
+    darkG.addColorStop(0, 'rgba(0,0,0,0.9)');
+    darkG.addColorStop(0.5, 'rgba(5,0,15,0.7)');
+    darkG.addColorStop(0.8, 'rgba(10,0,30,0.3)');
+    darkG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = darkG;
+    ctx.beginPath();
+    ctx.arc(cx, cy, holeR * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ── Layer 6: Void edge glow (borders) ────────────────────────────────
+    const edgeD = 50 * int;
+    const edgeDefs = [
+      { x0: 0, y0: 0, x1: 0, y1: edgeD, fx: 0, fy: 0, fw: W, fh: edgeD },
+      { x0: 0, y0: H, x1: 0, y1: H - edgeD, fx: 0, fy: H - edgeD, fw: W, fh: edgeD },
+      { x0: 0, y0: 0, x1: edgeD, y1: 0, fx: 0, fy: 0, fw: edgeD, fh: H },
+      { x0: W, y0: 0, x1: W - edgeD, y1: 0, fx: W - edgeD, fy: 0, fw: edgeD, fh: H },
+    ];
+    for (const e of edgeDefs) {
+      const g = ctx.createLinearGradient(e.x0, e.y0, e.x1, e.y1);
+      const edgePulse = 0.7 + 0.3 * Math.sin(time * 0.8);
+      g.addColorStop(0, `rgba(120,30,180,${0.12 * int * edgePulse})`);
+      g.addColorStop(0.5, `rgba(80,10,140,${0.04 * int})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(e.fx, e.fy, e.fw, e.fh);
+    }
+
+    // ── Layer 7: Matter streams being pulled toward center ───────────────
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const streamCount = 8;
+    for (let s = 0; s < streamCount; s++) {
+      const baseAngle = (s / streamCount) * Math.PI * 2 + time * 0.15;
+      ctx.beginPath();
+      for (let i = 0; i <= 60; i++) {
+        const t = i / 60;
+        // Spiral inward: starts far, curves into center
+        const r = diskR * (1 - t * 0.85);
+        const theta = baseAngle + t * Math.PI * 2.5; // 2.5 turns inward
+        const x = cx + Math.cos(theta) * r;
+        const y = cy + Math.sin(theta) * r * 0.42; // perspective
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      const streamFade = 0.06 * int * (0.7 + 0.3 * Math.sin(time * 2 + s));
+      ctx.strokeStyle = `rgba(200,120,255,${streamFade})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // BLACK HOLE — Standalone configurable effect (works on any theme)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** Convert HSL (h: 0-360, s: 0-1, l: 0-1) to {r,g,b} (0-255) */
+  function hsl2rgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+    if (h < 60)       { r = c; g = x; }
+    else if (h < 120) { r = x; g = c; }
+    else if (h < 180) { g = c; b = x; }
+    else if (h < 240) { g = x; b = c; }
+    else if (h < 300) { r = x; b = c; }
+    else              { r = c; b = x; }
+    return {
+      r: Math.round((r + m) * 255),
+      g: Math.round((g + m) * 255),
+      b: Math.round((b + m) * 255),
+    };
+  }
+
+  function drawBlackhole(W: number, H: number, time: number): void {
+    if (!ctx) return;
+
+    const cx = W / 2;
+    const cy = H / 2;
+    const minDim = Math.min(W, H);
+
+    // Configurable params
+    const sz = bhSize;
+    const gl = bhGlow;
+    const scaleX = bhWidth;
+    const scaleY = bhHeight;
+
+    const holeR = minDim * 0.06 * sz;
+    const diskR = minDim * 0.35 * sz;
+
+    // Generate color palette from hue
+    const bright = hsl2rgb(bhHue, 0.7, 0.75);
+    const mid    = hsl2rgb(bhHue, 0.8, 0.5);
+    const dark   = hsl2rgb(bhHue, 0.9, 0.3);
+    const dim    = hsl2rgb(bhHue, 0.7, 0.15);
+
+    ctx.save();
+
+    // Apply width/height stretch from center
+    ctx.translate(cx, cy);
+    ctx.scale(scaleX, scaleY);
+    ctx.translate(-cx, -cy);
+
+    ctx.globalCompositeOperation = 'lighter';
+
+    // ── Layer 1: Swirling accretion disk spirals ─────────────────────────
+    const armCount = 5;
+    for (let arm = 0; arm < armCount; arm++) {
+      const armOffset = (arm / armCount) * Math.PI * 2;
+      ctx.beginPath();
+      for (let i = 0; i <= 120; i++) {
+        const t = i / 120;
+        const theta = t * Math.PI * 4 + armOffset + time * 0.3;
+        const r = holeR * 1.5 + (diskR - holeR) * t;
+        const wobble = Math.sin(theta * 3 + time * 2) * r * 0.04;
+        const x = cx + Math.cos(theta) * (r + wobble);
+        const y = cy + Math.sin(theta) * (r + wobble) * 0.45;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      const fade = (0.08 + 0.04 * Math.sin(time * 1.5 + arm)) * gl;
+      ctx.strokeStyle = `rgba(${mid.r},${mid.g},${mid.b},${fade})`;
+      ctx.lineWidth = 2 + Math.sin(time + arm) * 0.5;
+      ctx.stroke();
+    }
+
+    // ── Layer 2: Bright photon rings ────────────────────────────────────
+    for (let ring = 0; ring < 3; ring++) {
+      const ringR = holeR * (2.0 + ring * 0.6);
+      const segments = 80;
+      ctx.beginPath();
+      for (let i = 0; i <= segments; i++) {
+        const theta = (i / segments) * Math.PI * 2;
+        const pulse = 1 + Math.sin(time * 2.5 + ring + theta * 2) * 0.03;
+        const x = cx + Math.cos(theta) * ringR * pulse;
+        const y = cy + Math.sin(theta) * ringR * 0.42 * pulse;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      const ringAlpha = (0.15 - ring * 0.04) * gl;
+      ctx.strokeStyle = `rgba(${bright.r},${bright.g},${bright.b},${ringAlpha})`;
+      ctx.lineWidth = (3 - ring) * gl;
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(${mid.r},${mid.g},${mid.b},${ringAlpha * 0.5})`;
+      ctx.lineWidth = (6 - ring * 2) * gl;
+      ctx.stroke();
+    }
+
+    // ── Layer 3: Gravitational lensing halo ─────────────────────────────
+    const lensR = holeR * 2.5;
+    const lensPulse = 0.7 + 0.3 * Math.sin(time * 1.8);
+
+    const lensG = ctx.createRadialGradient(cx, cy - lensR * 0.3, lensR * 0.6, cx, cy - lensR * 0.3, lensR * 1.5);
+    lensG.addColorStop(0, `rgba(${bright.r},${bright.g},${bright.b},${0.2 * gl * lensPulse})`);
+    lensG.addColorStop(0.3, `rgba(${mid.r},${mid.g},${mid.b},${0.1 * gl * lensPulse})`);
+    lensG.addColorStop(0.6, `rgba(${dark.r},${dark.g},${dark.b},${0.04 * gl})`);
+    lensG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = lensG;
+    ctx.fillRect(cx - lensR * 2, cy - lensR * 2, lensR * 4, lensR * 3);
+
+    const lensG2 = ctx.createRadialGradient(cx, cy + lensR * 0.4, lensR * 0.4, cx, cy + lensR * 0.4, lensR * 1.2);
+    lensG2.addColorStop(0, `rgba(${mid.r},${mid.g},${mid.b},${0.08 * gl * lensPulse})`);
+    lensG2.addColorStop(0.5, `rgba(${dark.r},${dark.g},${dark.b},${0.03 * gl})`);
+    lensG2.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = lensG2;
+    ctx.fillRect(cx - lensR * 2, cy - lensR, lensR * 4, lensR * 3);
+
+    // ── Layer 4: Event horizon glow ring ─────────────────────────────────
+    const horizonPulse = 0.8 + 0.2 * Math.sin(time * 3.2);
+    const horizonG = ctx.createRadialGradient(cx, cy, holeR * 0.8, cx, cy, holeR * 2.5);
+    horizonG.addColorStop(0, 'rgba(0,0,0,0)');
+    horizonG.addColorStop(0.4, `rgba(${mid.r},${mid.g},${mid.b},${0.12 * gl * horizonPulse})`);
+    horizonG.addColorStop(0.7, `rgba(${bright.r},${bright.g},${bright.b},${0.08 * gl * horizonPulse})`);
+    horizonG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = horizonG;
+    ctx.beginPath();
+    ctx.arc(cx, cy, holeR * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // ── Layer 5: Dark singularity (NOT affected by scale transform) ─────
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scaleX, scaleY);
+    ctx.translate(-cx, -cy);
+
+    const darkG = ctx.createRadialGradient(cx, cy, 0, cx, cy, holeR * 1.8);
+    darkG.addColorStop(0, 'rgba(0,0,0,0.9)');
+    darkG.addColorStop(0.5, `rgba(${dim.r},${dim.g},${dim.b},0.7)`);
+    darkG.addColorStop(0.8, `rgba(${dim.r},${dim.g},${dim.b},0.3)`);
+    darkG.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = darkG;
+    ctx.beginPath();
+    ctx.arc(cx, cy, holeR * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // ── Layer 6: Edge glow ──────────────────────────────────────────────
+    const edgeD = 50 * gl;
+    const edgeDefs = [
+      { x0: 0, y0: 0, x1: 0, y1: edgeD, fx: 0, fy: 0, fw: W, fh: edgeD },
+      { x0: 0, y0: H, x1: 0, y1: H - edgeD, fx: 0, fy: H - edgeD, fw: W, fh: edgeD },
+      { x0: 0, y0: 0, x1: edgeD, y1: 0, fx: 0, fy: 0, fw: edgeD, fh: H },
+      { x0: W, y0: 0, x1: W - edgeD, y1: 0, fx: W - edgeD, fy: 0, fw: edgeD, fh: H },
+    ];
+    for (const e of edgeDefs) {
+      const g = ctx.createLinearGradient(e.x0, e.y0, e.x1, e.y1);
+      const edgePulse = 0.7 + 0.3 * Math.sin(time * 0.8);
+      g.addColorStop(0, `rgba(${mid.r},${mid.g},${mid.b},${0.12 * gl * edgePulse})`);
+      g.addColorStop(0.5, `rgba(${dark.r},${dark.g},${dark.b},${0.04 * gl})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(e.fx, e.fy, e.fw, e.fh);
+    }
+
+    // ── Layer 7: Matter streams ──────────────────────────────────────────
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(scaleX, scaleY);
+    ctx.translate(-cx, -cy);
+    ctx.globalCompositeOperation = 'lighter';
+
+    const streamCount = 8;
+    for (let s = 0; s < streamCount; s++) {
+      const baseAngle = (s / streamCount) * Math.PI * 2 + time * 0.15;
+      ctx.beginPath();
+      for (let i = 0; i <= 60; i++) {
+        const t = i / 60;
+        const r = diskR * (1 - t * 0.85);
+        const theta = baseAngle + t * Math.PI * 2.5;
+        const x = cx + Math.cos(theta) * r;
+        const y = cy + Math.sin(theta) * r * 0.42;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      const streamFade = 0.06 * gl * (0.7 + 0.3 * Math.sin(time * 2 + s));
+      ctx.strokeStyle = `rgba(${bright.r},${bright.g},${bright.b},${streamFade})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // Main draw loop
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -871,12 +1222,19 @@
     const int = intensity;
 
     switch (currentTheme) {
-      case 'fire':   drawFire(W, H, time, int); break;
-      case 'galaxy': drawGalaxy(W, H, time, int); break;
-      case 'winter': drawWinter(W, H, time, int); break;
+      case 'fire':     drawFire(W, H, time, int); break;
+      case 'galaxy':   drawGalaxy(W, H, time, int); break;
+      case 'winter':   drawWinter(W, H, time, int); break;
       case 'dark':     drawDark(W, H, time, int); break;
       case 'light':    drawLight(W, H, time, int); break;
       case 'electric': drawElectric(W, H, time, int); break;
+      case 'void':     drawVoid(W, H, time, int); break;
+    }
+
+    // Standalone black hole effect (works on any theme)
+    if (bhEnabled) {
+      const bhTime = frame * 0.02 * bhSpeed;
+      drawBlackhole(W, H, bhTime);
     }
 
     animId = requestAnimationFrame(draw);
@@ -904,11 +1262,27 @@
     };
     window.addEventListener('resize', onResize);
 
+    // Read initial black hole values
+    bhEnabled = get(fx.blackholeEnabled);
+    bhSize    = get(fx.blackholeSize);
+    bhSpeed   = get(fx.blackholeSpeed);
+    bhGlow    = get(fx.blackholeGlow);
+    bhWidth   = get(fx.blackholeWidth);
+    bhHeight  = get(fx.blackholeHeight);
+    bhHue     = get(fx.blackholeHue);
+
     const unsubs = [
       fx.borderEnabled.subscribe(v   => { enabled = v; }),
       fx.borderIntensity.subscribe(v => { intensity = v; }),
       fx.borderSpeed.subscribe(v     => { speed = v; }),
       theme.subscribe(v              => { currentTheme = v; }),
+      fx.blackholeEnabled.subscribe(v => { bhEnabled = v; }),
+      fx.blackholeSize.subscribe(v    => { bhSize = v; }),
+      fx.blackholeSpeed.subscribe(v   => { bhSpeed = v; }),
+      fx.blackholeGlow.subscribe(v    => { bhGlow = v; }),
+      fx.blackholeWidth.subscribe(v   => { bhWidth = v; }),
+      fx.blackholeHeight.subscribe(v  => { bhHeight = v; }),
+      fx.blackholeHue.subscribe(v     => { bhHue = v; }),
     ];
 
     return () => {
