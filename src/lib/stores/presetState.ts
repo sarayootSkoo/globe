@@ -45,6 +45,7 @@ const BUILTIN_PRESETS: Preset[] = [
       'fx.border': false,
       'fx.bloom': false,
       'fx.bhEnabled': false,
+      'fx.fwEnabled': false,
       'globe.autoRotate': true,
       'globe.wireframe': false,
       'globe.pulse': false,
@@ -52,6 +53,26 @@ const BUILTIN_PRESETS: Preset[] = [
       'globe.rotateSpeed': 0.1,
       'globe.opacity': 0.8,
       'globe.dotBright': 0.5,
+    },
+  },
+  {
+    name: 'Fireworks',
+    settings: {
+      'app.theme': 'dark',
+      'app.glow': 0.5,
+      'fx.fwEnabled': true,
+      'fx.fwSpeed': 1,
+      'fx.fwRate': 2,
+      'fx.fwSize': 1.5,
+      'fx.fwMiddleFire': true,
+      'fx.fwColorful': true,
+      'fx.fwNoLimit': false,
+      'fx.fwHue': 0,
+      'fx.bloom': true,
+      'fx.bloomStr': 1.5,
+      'fx.bloomRad': 0.5,
+      'fx.bloomThr': 0.2,
+      'globe.opacity': 0.5,
     },
   },
   {
@@ -69,6 +90,13 @@ const BUILTIN_PRESETS: Preset[] = [
       'fx.sparkRate': 3,
       'fx.borderIntensity': 3,
       'fx.borderSpeed': 2,
+      'fx.fwEnabled': true,
+      'fx.fwSpeed': 3,
+      'fx.fwRate': 5,
+      'fx.fwSize': 3,
+      'fx.fwMiddleFire': true,
+      'fx.fwColorful': true,
+      'fx.fwNoLimit': true,
       'globe.opacity': 0.3,
     },
   },
@@ -112,6 +140,14 @@ const STORE_MAP: Record<string, { store: any; type: 'num' | 'bool' | 'string' }>
   'fx.bhWidth': { store: fx.blackholeWidth, type: 'num' },
   'fx.bhHeight': { store: fx.blackholeHeight, type: 'num' },
   'fx.bhHue': { store: fx.blackholeHue, type: 'num' },
+  'fx.fwEnabled': { store: fx.fireworksEnabled, type: 'bool' },
+  'fx.fwSpeed': { store: fx.fireworksSpeed, type: 'num' },
+  'fx.fwRate': { store: fx.fireworksLaunchRate, type: 'num' },
+  'fx.fwSize': { store: fx.fireworksBurstSize, type: 'num' },
+  'fx.fwMiddleFire': { store: fx.fireworksMiddleFire, type: 'bool' },
+  'fx.fwColorful': { store: fx.fireworksColorful, type: 'bool' },
+  'fx.fwNoLimit': { store: fx.fireworksNoLimit, type: 'bool' },
+  'fx.fwHue': { store: fx.fireworksHue, type: 'num' },
   'globe.autoRotate': { store: globe.autoRotate, type: 'bool' },
   'globe.wireframe': { store: globe.showWireframe, type: 'bool' },
   'globe.dots': { store: globe.showDots, type: 'bool' },
@@ -164,6 +200,14 @@ const DEFAULT_VALUES: Record<string, any> = {
   'fx.bhWidth': 1,
   'fx.bhHeight': 1,
   'fx.bhHue': 280,
+  'fx.fwEnabled': false,
+  'fx.fwSpeed': 1,
+  'fx.fwRate': 1,
+  'fx.fwSize': 1,
+  'fx.fwMiddleFire': true,
+  'fx.fwColorful': true,
+  'fx.fwNoLimit': false,
+  'fx.fwHue': 0,
   'globe.autoRotate': true,
   'globe.wireframe': true,
   'globe.dots': true,
@@ -241,8 +285,22 @@ export function initPresets(): void {
 
 /** Export all custom presets as a JSON string */
 export function exportPresets(): string {
-  const custom = get(presets).filter(p => !['Chill', 'Low Energy', 'MAX'].includes(p.name));
+  const custom = get(presets).filter(p => !BUILTIN_PRESETS.some(b => b.name === p.name));
   return JSON.stringify(custom, null, 2);
+}
+
+/** Export presets as a downloadable .json file */
+export function exportPresetsAsFile(): void {
+  const json = exportPresets();
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `kg-presets-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 /** Import presets from a JSON string (merges with existing) */
@@ -263,9 +321,29 @@ export function importPresets(json: string): number {
       count++;
     }
     presets.set([...existing]);
-    safeSet('presets.custom', existing.filter(p => !['Chill', 'Low Energy', 'MAX'].includes(p.name)));
+    safeSet('presets.custom', existing.filter(p => !BUILTIN_PRESETS.some(b => b.name === p.name)));
     return count;
   } catch {
     return 0;
   }
+}
+
+/** Import presets from a .json file via file picker dialog */
+export function importPresetsFromFile(): Promise<number> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) { resolve(0); return; }
+      try {
+        const text = await file.text();
+        resolve(importPresets(text));
+      } catch {
+        resolve(0);
+      }
+    };
+    input.click();
+  });
 }

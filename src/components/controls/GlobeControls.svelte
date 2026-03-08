@@ -37,6 +37,15 @@
   let globeOpen = $state(safeGet<boolean>('ui.globeOpen', true));
   let fxOpen    = $state(safeGet<boolean>('ui.fxOpen', true));
 
+  // Sub-group collapse states (persisted)
+  let grpBgOpen       = $state(safeGet<boolean>('ui.grpBg', false));
+  let grpElectricOpen = $state(safeGet<boolean>('ui.grpElec', false));
+  let grpFireworkOpen = $state(safeGet<boolean>('ui.grpFw', false));
+  let grpBhOpen       = $state(safeGet<boolean>('ui.grpBh', false));
+  let grpBloomOpen    = $state(safeGet<boolean>('ui.grpBloom', false));
+  let grpThemeOpen    = $state(safeGet<boolean>('ui.grpTheme', false));
+  let grpMasterOpen   = $state(safeGet<boolean>('ui.grpMaster', true));
+
   function toggleGlobeSection(): void {
     globeOpen = !globeOpen;
     safeSet('ui.globeOpen', globeOpen);
@@ -44,6 +53,17 @@
   function toggleFxSection(): void {
     fxOpen = !fxOpen;
     safeSet('ui.fxOpen', fxOpen);
+  }
+  function toggleGrp(key: string): void {
+    switch (key) {
+      case 'bg':       grpBgOpen = !grpBgOpen;           safeSet('ui.grpBg', grpBgOpen); break;
+      case 'electric': grpElectricOpen = !grpElectricOpen; safeSet('ui.grpElec', grpElectricOpen); break;
+      case 'fw':       grpFireworkOpen = !grpFireworkOpen; safeSet('ui.grpFw', grpFireworkOpen); break;
+      case 'bh':       grpBhOpen = !grpBhOpen;           safeSet('ui.grpBh', grpBhOpen); break;
+      case 'bloom':    grpBloomOpen = !grpBloomOpen;     safeSet('ui.grpBloom', grpBloomOpen); break;
+      case 'theme':    grpThemeOpen = !grpThemeOpen;     safeSet('ui.grpTheme', grpThemeOpen); break;
+      case 'master':   grpMasterOpen = !grpMasterOpen;   safeSet('ui.grpMaster', grpMasterOpen); break;
+    }
   }
 
   // ── Theme effect controls ──────────────────────────────────────────────────
@@ -80,6 +100,16 @@
   let fxBhWidthVal   = $state(100);   // 0–2000 → 0–20
   let fxBhHeightVal  = $state(100);   // 0–2000 → 0–20
   let fxBhHueVal     = $state(280);   // 0–360 raw
+
+  // Fireworks controls
+  let fxFwEnabled     = $state(false);
+  let fxFwSpeedVal    = $state(100);    // 25–300 → 0.25–3
+  let fxFwRateVal     = $state(100);    // 25–300 → 0.25–3
+  let fxFwSizeVal     = $state(100);    // 20–300 → 0.2–3
+  let fxFwMiddleFire  = $state(true);
+  let fxFwColorful    = $state(true);
+  let fxFwNoLimit     = $state(false);
+  let fxFwHueVal      = $state(0);      // 0 = auto, 1–360 = specific
 
   // Bloom (post-processing) controls
   let fxBloom        = $state(false);
@@ -137,6 +167,14 @@
     const u40 = fx.blackholeWidth.subscribe(v        => { fxBhWidthVal = Math.round(v * 100); });
     const u41 = fx.blackholeHeight.subscribe(v       => { fxBhHeightVal = Math.round(v * 100); });
     const u42 = fx.blackholeHue.subscribe(v          => { fxBhHueVal = Math.round(v); });
+    const u53 = fx.fireworksEnabled.subscribe(v      => { fxFwEnabled = v; });
+    const u54 = fx.fireworksSpeed.subscribe(v        => { fxFwSpeedVal = Math.round(v * 100); });
+    const u55 = fx.fireworksLaunchRate.subscribe(v   => { fxFwRateVal = Math.round(v * 100); });
+    const u56 = fx.fireworksBurstSize.subscribe(v    => { fxFwSizeVal = Math.round(v * 100); });
+    const u57 = fx.fireworksMiddleFire.subscribe(v   => { fxFwMiddleFire = v; });
+    const u58 = fx.fireworksColorful.subscribe(v     => { fxFwColorful = v; });
+    const u59 = fx.fireworksNoLimit.subscribe(v      => { fxFwNoLimit = v; });
+    const u60 = fx.fireworksHue.subscribe(v          => { fxFwHueVal = Math.round(v); });
     const u49 = fx.bloomEnabled.subscribe(v          => { fxBloom = v; });
     const u50 = fx.bloomStrength.subscribe(v         => { fxBloomStrVal = Math.round(v * 100); });
     const u51 = fx.bloomRadius.subscribe(v           => { fxBloomRadVal = Math.round(v * 100); });
@@ -146,7 +184,8 @@
                    u20(); u21(); u22(); u23(); u24(); u25(); u26(); u27(); u28();
                    u29(); u30(); u31(); u32(); u33(); u34(); u35();
                    u36(); u37(); u38(); u39(); u40(); u41(); u42(); u43();
-                   u44(); u45(); u46(); u47(); u48(); u49(); u50(); u51(); u52(); };
+                   u44(); u45(); u46(); u47(); u48(); u49(); u50(); u51(); u52();
+                   u53(); u54(); u55(); u56(); u57(); u58(); u59(); u60(); };
   });
 
   // ── Zoom display label ───────────────────────────────────────────────────────
@@ -367,6 +406,29 @@
   function handleBhHue(e: Event): void {
     const raw = parseInt((e.target as HTMLInputElement).value, 10);
     fx.blackholeHue.set(raw);
+  }
+
+  // ── Fireworks handlers ───────────────────────────────────────────────────
+  let fxFwSpeedLabel = $derived(fxFwSpeedVal + '%');
+  let fxFwRateLabel  = $derived(fxFwRateVal + '%');
+  let fxFwSizeLabel  = $derived(fxFwSizeVal + '%');
+  let fxFwHueLabel   = $derived(fxFwHueVal === 0 ? 'Auto' : fxFwHueVal + '\u00B0');
+
+  function handleFwSpeed(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.fireworksSpeed.set(raw / 100);
+  }
+  function handleFwRate(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.fireworksLaunchRate.set(raw / 100);
+  }
+  function handleFwSize(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.fireworksBurstSize.set(raw / 100);
+  }
+  function handleFwHue(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.fireworksHue.set(raw);
   }
 
   // ── Bloom (post-processing) handlers ──────────────────────────────────────
@@ -667,459 +729,366 @@
   </div>
 
   {#if fxOpen}
-  <!-- Background Stars -->
-  <div class="globe-ctrl-row">
-    <span class="globe-ctrl-label">BG Stars</span>
-    <div
-      class="globe-toggle"
-      class:on={fxBgStars}
-      title="Toggle background star particles"
-      onclick={() => fx.showBgStars.update(v => !v)}
-      role="switch"
-      aria-checked={fxBgStars}
-      tabindex="0"
-      onkeydown={(e) => e.key === 'Enter' && fx.showBgStars.update(v => !v)}
-    ></div>
+
+  <!-- ═══ Background Group ═══════════════════════════════════════════ -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="fx-group-header" onclick={() => toggleGrp('bg')}>
+    <span class="fx-group-label">Background</span>
+    <span class="chevron-sm" class:open={grpBgOpen}></span>
   </div>
 
-  <!-- Background Mesh -->
-  <div class="globe-ctrl-row">
-    <span class="globe-ctrl-label">BG Mesh</span>
-    <div
-      class="globe-toggle"
-      class:on={fxBgMesh}
-      title="Toggle background mesh grid"
-      onclick={() => fx.showBgMesh.update(v => !v)}
-      role="switch"
-      aria-checked={fxBgMesh}
-      tabindex="0"
-      onkeydown={(e) => e.key === 'Enter' && fx.showBgMesh.update(v => !v)}
-    ></div>
+  {#if grpBgOpen}
+    <div class="fx-group-body">
+      <div class="globe-ctrl-row">
+        <span class="globe-ctrl-label">BG Stars</span>
+        <div class="globe-toggle" class:on={fxBgStars} title="Toggle background star particles"
+          onclick={() => fx.showBgStars.update(v => !v)} role="switch" aria-checked={fxBgStars}
+          tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.showBgStars.update(v => !v)}></div>
+      </div>
+      <div class="globe-ctrl-row">
+        <span class="globe-ctrl-label">BG Mesh</span>
+        <div class="globe-toggle" class:on={fxBgMesh} title="Toggle background mesh grid"
+          onclick={() => fx.showBgMesh.update(v => !v)} role="switch" aria-checked={fxBgMesh}
+          tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.showBgMesh.update(v => !v)}></div>
+      </div>
+      <div class="globe-ctrl-row">
+        <span class="globe-ctrl-label">Border FX</span>
+        <div class="globe-toggle" class:on={fxBorder} title="Toggle magic border glow effect"
+          onclick={() => fx.borderEnabled.update(v => !v)} role="switch" aria-checked={fxBorder}
+          tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.borderEnabled.update(v => !v)}></div>
+      </div>
+      {#if fxBorder}
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header">
+            <span class="globe-ctrl-label">Border Glow</span>
+            <span class="globe-ctrl-label zoom-val">{fxBorderIntLabel}</span>
+          </div>
+          <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBorderIntVal}
+            title="Border glow intensity (0% = off, 2000% = extreme)" oninput={handleBorderIntensity} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header">
+            <span class="globe-ctrl-label">Border Speed</span>
+            <span class="globe-ctrl-label zoom-val">{fxBorderSpdLabel}</span>
+          </div>
+          <input type="range" class="fx-speed-slider" min="0" max="2000" value={fxBorderSpdVal}
+            title="Border animation speed" oninput={handleBorderSpeed} />
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- ═══ Electric / Energy Group ═══════════════════════════════════ -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="fx-group-header" onclick={() => toggleGrp('electric')}>
+    <span class="fx-group-label">Electric</span>
+    <span class="chevron-sm" class:open={grpElectricOpen}></span>
   </div>
 
-  <!-- Magic Border -->
-  <div class="globe-ctrl-row">
-    <span class="globe-ctrl-label">Border FX</span>
-    <div
-      class="globe-toggle"
-      class:on={fxBorder}
-      title="Toggle magic border glow effect"
-      onclick={() => fx.borderEnabled.update(v => !v)}
-      role="switch"
-      aria-checked={fxBorder}
-      tabindex="0"
-      onkeydown={(e) => e.key === 'Enter' && fx.borderEnabled.update(v => !v)}
-    ></div>
-  </div>
-
-  {#if fxBorder}
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">Border Glow</span>
-        <span class="globe-ctrl-label zoom-val">{fxBorderIntLabel}</span>
+  {#if grpElectricOpen}
+    <div class="fx-group-body">
+      <div class="globe-ctrl-row">
+        <span class="globe-ctrl-label">Lightning</span>
+        <div class="globe-toggle" class:on={fxLightning} title="Toggle background lightning bolts"
+          onclick={() => fx.showLightning.update(v => !v)} role="switch" aria-checked={fxLightning}
+          tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.showLightning.update(v => !v)}></div>
       </div>
-      <input
-        type="range"
-        class="fx-density-slider"
-        min="0"
-        max="2000"
-        value={fxBorderIntVal}
-        title="Border glow intensity (0% = off, 2000% = extreme)"
-        oninput={handleBorderIntensity}
-      />
-    </div>
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">Border Speed</span>
-        <span class="globe-ctrl-label zoom-val">{fxBorderSpdLabel}</span>
+      <div class="globe-ctrl-row">
+        <span class="globe-ctrl-label">Globe Arcs</span>
+        <div class="globe-toggle" class:on={fxElecArcs} title="Toggle electric arcs around the globe"
+          onclick={() => fx.showElectricArcs.update(v => !v)} role="switch" aria-checked={fxElecArcs}
+          tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.showElectricArcs.update(v => !v)}></div>
       </div>
-      <input
-        type="range"
-        class="fx-speed-slider"
-        min="0"
-        max="2000"
-        value={fxBorderSpdVal}
-        title="Border animation speed"
-        oninput={handleBorderSpeed}
-      />
-    </div>
-  {/if}
-
-  <!-- Black Hole Effect -->
-  <div class="globe-ctrl-row">
-    <span class="globe-ctrl-label">Black Hole</span>
-    <div
-      class="globe-toggle"
-      class:on={fxBhEnabled}
-      title="Toggle black hole effect"
-      onclick={() => fx.blackholeEnabled.update(v => !v)}
-      role="switch"
-      aria-checked={fxBhEnabled}
-      tabindex="0"
-      onkeydown={(e) => e.key === 'Enter' && fx.blackholeEnabled.update(v => !v)}
-    ></div>
-  </div>
-
-  {#if fxBhEnabled}
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">BH Size</span>
-        <span class="globe-ctrl-label zoom-val">{fxBhSizeLabel}</span>
+      <div class="globe-ctrl-row">
+        <span class="globe-ctrl-label">Plasma Aura</span>
+        <div class="globe-toggle" class:on={fxPlasmaAura} title="Toggle plasma glow aura around globe"
+          onclick={() => fx.showPlasmaAura.update(v => !v)} role="switch" aria-checked={fxPlasmaAura}
+          tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.showPlasmaAura.update(v => !v)}></div>
       </div>
-      <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhSizeVal}
-        title="Black hole size (0%–2000%)" oninput={handleBhSize} />
-    </div>
-
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">BH Speed</span>
-        <span class="globe-ctrl-label zoom-val">{fxBhSpeedLabel}</span>
+      <div class="globe-ctrl-row">
+        <span class="globe-ctrl-label">Spark Burst</span>
+        <div class="globe-toggle" class:on={fxSparkBurst} title="Toggle radial lightning spark burst"
+          onclick={() => fx.showSparkBurst.update(v => !v)} role="switch" aria-checked={fxSparkBurst}
+          tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.showSparkBurst.update(v => !v)}></div>
       </div>
-      <input type="range" class="fx-speed-slider" min="0" max="2000" value={fxBhSpeedVal}
-        title="Black hole animation speed (0%–2000%)" oninput={handleBhSpeed} />
-    </div>
-
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">BH Glow</span>
-        <span class="globe-ctrl-label zoom-val">{fxBhGlowLabel}</span>
-      </div>
-      <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhGlowVal}
-        title="Black hole glow intensity (0%–2000%)" oninput={handleBhGlow} />
-    </div>
-
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">BH Width</span>
-        <span class="globe-ctrl-label zoom-val">{fxBhWidthLabel}</span>
-      </div>
-      <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhWidthVal}
-        title="Black hole horizontal stretch (0%–2000%)" oninput={handleBhWidth} />
-    </div>
-
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">BH Height</span>
-        <span class="globe-ctrl-label zoom-val">{fxBhHeightLabel}</span>
-      </div>
-      <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhHeightVal}
-        title="Black hole vertical stretch (0%–2000%)" oninput={handleBhHeight} />
-    </div>
-
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">BH Color</span>
-        <span class="globe-ctrl-label zoom-val">{fxBhHueLabel}</span>
-      </div>
-      <input type="range" class="bh-hue-slider" min="0" max="360" value={fxBhHueVal}
-        title="Black hole color hue (0°–360°)" oninput={handleBhHue} />
-    </div>
-  {/if}
-
-  <!-- Bloom (Post-Processing) -->
-  <div class="globe-ctrl-row">
-    <span class="globe-ctrl-label">Bloom</span>
-    <div
-      class="globe-toggle"
-      class:on={fxBloom}
-      title="Toggle bloom post-processing"
-      onclick={() => fx.bloomEnabled.update(v => !v)}
-      role="switch"
-      aria-checked={fxBloom}
-      tabindex="0"
-      onkeydown={(e) => e.key === 'Enter' && fx.bloomEnabled.update(v => !v)}
-    ></div>
-  </div>
-
-  {#if fxBloom}
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">Strength</span>
-        <span class="globe-ctrl-label zoom-val">{fxBloomStrLabel}</span>
-      </div>
-      <input type="range" class="fx-density-slider" min="0" max="500" value={fxBloomStrVal}
-        title="Bloom strength (0%–500%)" oninput={handleBloomStr} />
-    </div>
-
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">Radius</span>
-        <span class="globe-ctrl-label zoom-val">{fxBloomRadLabel}</span>
-      </div>
-      <input type="range" class="fx-speed-slider" min="0" max="200" value={fxBloomRadVal}
-        title="Bloom radius (0%–200%)" oninput={handleBloomRad} />
-    </div>
-
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">Threshold</span>
-        <span class="globe-ctrl-label zoom-val">{fxBloomThrLabel}</span>
-      </div>
-      <input type="range" class="fx-density-slider" min="0" max="100" value={fxBloomThrVal}
-        title="Bloom threshold (0%–100%)" oninput={handleBloomThr} />
-    </div>
-  {/if}
-
-  <div class="divider"></div>
-
-  <!-- Theme-specific toggles (only show when relevant) -->
-  {#if isFireTheme}
-    <div class="globe-ctrl-row">
-      <span class="globe-ctrl-label">Embers</span>
-      <div
-        class="globe-toggle"
-        class:on={fxEmbers}
-        title="Toggle fire ember particles"
-        onclick={() => fx.showEmbers.update(v => !v)}
-        role="switch"
-        aria-checked={fxEmbers}
-        tabindex="0"
-        onkeydown={(e) => e.key === 'Enter' && fx.showEmbers.update(v => !v)}
-      ></div>
-    </div>
-  {/if}
-
-  {#if isWinterTheme}
-    <div class="globe-ctrl-row">
-      <span class="globe-ctrl-label">Snowflakes</span>
-      <div
-        class="globe-toggle"
-        class:on={fxSnowflakes}
-        title="Toggle falling snowflakes"
-        onclick={() => fx.showSnowflakes.update(v => !v)}
-        role="switch"
-        aria-checked={fxSnowflakes}
-        tabindex="0"
-        onkeydown={(e) => e.key === 'Enter' && fx.showSnowflakes.update(v => !v)}
-      ></div>
-    </div>
-  {/if}
-
-  {#if isGalaxyTheme}
-    <div class="globe-ctrl-row">
-      <span class="globe-ctrl-label">Nebula</span>
-      <div
-        class="globe-toggle"
-        class:on={fxNebula}
-        title="Toggle nebula cloud layers"
-        onclick={() => fx.showNebula.update(v => !v)}
-        role="switch"
-        aria-checked={fxNebula}
-        tabindex="0"
-        onkeydown={(e) => e.key === 'Enter' && fx.showNebula.update(v => !v)}
-      ></div>
-    </div>
-
-    <div class="globe-ctrl-row">
-      <span class="globe-ctrl-label">Glitter</span>
-      <div
-        class="globe-toggle"
-        class:on={fxGlitter}
-        title="Toggle glitter sparkle effect"
-        onclick={() => fx.showGlitter.update(v => !v)}
-        role="switch"
-        aria-checked={fxGlitter}
-        tabindex="0"
-        onkeydown={(e) => e.key === 'Enter' && fx.showGlitter.update(v => !v)}
-      ></div>
-    </div>
-
-    <div class="globe-ctrl-row">
-      <span class="globe-ctrl-label">Comets</span>
-      <div
-        class="globe-toggle"
-        class:on={fxShootStars}
-        title="Toggle shooting star comets"
-        onclick={() => fx.showShootingStars.update(v => !v)}
-        role="switch"
-        aria-checked={fxShootStars}
-        tabindex="0"
-        onkeydown={(e) => e.key === 'Enter' && fx.showShootingStars.update(v => !v)}
-      ></div>
-    </div>
-  {/if}
-
-  <!-- Electric / Energy effects (available on all themes) -->
-    <div class="globe-ctrl-row">
-      <span class="globe-ctrl-label">Lightning</span>
-      <div
-        class="globe-toggle"
-        class:on={fxLightning}
-        title="Toggle background lightning bolts"
-        onclick={() => fx.showLightning.update(v => !v)}
-        role="switch"
-        aria-checked={fxLightning}
-        tabindex="0"
-        onkeydown={(e) => e.key === 'Enter' && fx.showLightning.update(v => !v)}
-      ></div>
-    </div>
-
-    <div class="globe-ctrl-row">
-      <span class="globe-ctrl-label">Globe Arcs</span>
-      <div
-        class="globe-toggle"
-        class:on={fxElecArcs}
-        title="Toggle electric arcs around the globe"
-        onclick={() => fx.showElectricArcs.update(v => !v)}
-        role="switch"
-        aria-checked={fxElecArcs}
-        tabindex="0"
-        onkeydown={(e) => e.key === 'Enter' && fx.showElectricArcs.update(v => !v)}
-      ></div>
-    </div>
-
-    <div class="globe-ctrl-row">
-      <span class="globe-ctrl-label">Plasma Aura</span>
-      <div
-        class="globe-toggle"
-        class:on={fxPlasmaAura}
-        title="Toggle plasma glow aura around globe"
-        onclick={() => fx.showPlasmaAura.update(v => !v)}
-        role="switch"
-        aria-checked={fxPlasmaAura}
-        tabindex="0"
-        onkeydown={(e) => e.key === 'Enter' && fx.showPlasmaAura.update(v => !v)}
-      ></div>
-    </div>
-
-    <div class="globe-ctrl-row">
-      <span class="globe-ctrl-label">Spark Burst</span>
-      <div
-        class="globe-toggle"
-        class:on={fxSparkBurst}
-        title="Toggle radial lightning spark burst"
-        onclick={() => fx.showSparkBurst.update(v => !v)}
-        role="switch"
-        aria-checked={fxSparkBurst}
-        tabindex="0"
-        onkeydown={(e) => e.key === 'Enter' && fx.showSparkBurst.update(v => !v)}
-      ></div>
-    </div>
-
-    {#if fxSparkBurst}
+      {#if fxSparkBurst}
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header">
+            <span class="globe-ctrl-label">Spark Power</span>
+            <span class="globe-ctrl-label zoom-val">{fxSparkIntLabel}</span>
+          </div>
+          <input type="range" class="fx-density-slider" min="0" max="2000" value={fxSparkIntVal}
+            title="Spark burst bolt count & brightness" oninput={handleSparkIntensity} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header">
+            <span class="globe-ctrl-label">Spark Rate</span>
+            <span class="globe-ctrl-label zoom-val">{fxSparkRateLabel}</span>
+          </div>
+          <input type="range" class="fx-speed-slider" min="0" max="2000" value={fxSparkRateVal}
+            title="Spark burst pulse frequency" oninput={handleSparkRate} />
+        </div>
+      {/if}
       <div class="globe-ctrl-row fx-slider-row">
         <div class="zoom-header">
-          <span class="globe-ctrl-label">Spark Power</span>
-          <span class="globe-ctrl-label zoom-val">{fxSparkIntLabel}</span>
+          <span class="globe-ctrl-label">Arc Glow</span>
+          <span class="globe-ctrl-label zoom-val">{fxElecArcIntLabel}</span>
         </div>
-        <input
-          type="range"
-          class="fx-density-slider"
-          min="0"
-          max="2000"
-          value={fxSparkIntVal}
-          title="Spark burst bolt count & brightness (0% = off, 2000% = extreme)"
-          oninput={handleSparkIntensity}
-        />
+        <input type="range" class="fx-density-slider" min="0" max="2000" value={fxElecArcIntVal}
+          title="Electric arc brightness" oninput={handleElecArcIntensity} />
       </div>
       <div class="globe-ctrl-row fx-slider-row">
         <div class="zoom-header">
-          <span class="globe-ctrl-label">Spark Rate</span>
-          <span class="globe-ctrl-label zoom-val">{fxSparkRateLabel}</span>
+          <span class="globe-ctrl-label">Arc Speed</span>
+          <span class="globe-ctrl-label zoom-val">{fxElecArcSpdLabel}</span>
         </div>
-        <input
-          type="range"
-          class="fx-speed-slider"
-          min="0"
-          max="2000"
-          value={fxSparkRateVal}
-          title="Spark burst pulse frequency (0% = off, 2000% = rapid-fire)"
-          oninput={handleSparkRate}
-        />
+        <input type="range" class="fx-speed-slider" min="0" max="2000" value={fxElecArcSpdVal}
+          title="Arc animation speed" oninput={handleElecArcSpeed} />
+      </div>
+      <div class="globe-ctrl-row fx-slider-row">
+        <div class="zoom-header">
+          <span class="globe-ctrl-label">Arc Count</span>
+          <span class="globe-ctrl-label zoom-val">{fxElecArcCntLabel}</span>
+        </div>
+        <input type="range" class="fx-density-slider" min="0" max="2000" value={fxElecArcCntVal}
+          title="Number of electric arcs & orbit rings" oninput={handleElecArcCount} />
+      </div>
+      <div class="globe-ctrl-row fx-slider-row">
+        <div class="zoom-header">
+          <span class="globe-ctrl-label">Orbit Speed</span>
+          <span class="globe-ctrl-label zoom-val">{fxElecOrbitSpdLabel}</span>
+        </div>
+        <input type="range" class="fx-speed-slider" min="0" max="2000" value={fxElecOrbitSpdVal}
+          title="Energy ring orbit rotation speed" oninput={handleElecOrbitSpeed} />
+      </div>
+      <div class="globe-ctrl-row fx-slider-row">
+        <div class="zoom-header">
+          <span class="globe-ctrl-label">Core Glow</span>
+          <span class="globe-ctrl-label zoom-val">{fxElecCoreGlowLabel}</span>
+        </div>
+        <input type="range" class="fx-density-slider" min="0" max="2000" value={fxElecCoreGlowVal}
+          title="Central energy core brightness" oninput={handleElecCoreGlow} />
+      </div>
+    </div>
+  {/if}
+
+  <!-- ═══ Fireworks Group ═══════════════════════════════════════════ -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="fx-group-header" onclick={() => toggleGrp('fw')}>
+    <span class="fx-group-label">Fireworks</span>
+    <span class="chevron-sm" class:open={grpFireworkOpen}></span>
+  </div>
+
+  {#if grpFireworkOpen}
+    <div class="fx-group-body">
+      <div class="globe-ctrl-row">
+        <span class="globe-ctrl-label">Enabled</span>
+        <div class="globe-toggle" class:on={fxFwEnabled} title="Toggle 3D firework explosions"
+          onclick={() => fx.fireworksEnabled.update(v => !v)} role="switch" aria-checked={fxFwEnabled}
+          tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.fireworksEnabled.update(v => !v)}></div>
+      </div>
+      {#if fxFwEnabled}
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header">
+            <span class="globe-ctrl-label">Speed</span>
+            <span class="globe-ctrl-label zoom-val">{fxFwSpeedLabel}</span>
+          </div>
+          <input type="range" class="fx-speed-slider" min="25" max="300" value={fxFwSpeedVal}
+            title="Firework animation speed (25%–300%)" oninput={handleFwSpeed} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header">
+            <span class="globe-ctrl-label">Launch Rate</span>
+            <span class="globe-ctrl-label zoom-val">{fxFwRateLabel}</span>
+          </div>
+          <input type="range" class="fx-density-slider" min="25" max="2000" value={fxFwRateVal}
+            title="Rockets per interval (25%–2000%)" oninput={handleFwRate} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header">
+            <span class="globe-ctrl-label">Burst Size</span>
+            <span class="globe-ctrl-label zoom-val">{fxFwSizeLabel}</span>
+          </div>
+          <input type="range" class="fx-density-slider" min="20" max="500" value={fxFwSizeVal}
+            title="Explosion particle count & spread (20%–500%)" oninput={handleFwSize} />
+        </div>
+        <div class="globe-ctrl-row">
+          <span class="globe-ctrl-label">Middle Fire</span>
+          <div class="globe-toggle" class:on={fxFwMiddleFire} title="Secondary inner burst after explosion"
+            onclick={() => fx.fireworksMiddleFire.update(v => !v)} role="switch" aria-checked={fxFwMiddleFire}
+            tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.fireworksMiddleFire.update(v => !v)}></div>
+        </div>
+        <div class="globe-ctrl-row">
+          <span class="globe-ctrl-label">Colorful</span>
+          <div class="globe-toggle" class:on={fxFwColorful} title="Random vivid colors + rainbow specials"
+            onclick={() => fx.fireworksColorful.update(v => !v)} role="switch" aria-checked={fxFwColorful}
+            tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.fireworksColorful.update(v => !v)}></div>
+        </div>
+        <div class="globe-ctrl-row">
+          <span class="globe-ctrl-label">No Limit</span>
+          <div class="globe-toggle" class:on={fxFwNoLimit} title="Remove concurrent firework limit"
+            onclick={() => fx.fireworksNoLimit.update(v => !v)} role="switch" aria-checked={fxFwNoLimit}
+            tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.fireworksNoLimit.update(v => !v)}></div>
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header">
+            <span class="globe-ctrl-label">Fire Color</span>
+            <span class="globe-ctrl-label zoom-val">{fxFwHueLabel}</span>
+          </div>
+          <input type="range" class="bh-hue-slider" min="0" max="360" value={fxFwHueVal}
+            title="Firework color hue (0 = auto, 1°–360° = specific)" oninput={handleFwHue} />
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- ═══ Black Hole Group ═══════════════════════════════════════════ -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="fx-group-header" onclick={() => toggleGrp('bh')}>
+    <span class="fx-group-label">Black Hole</span>
+    <span class="chevron-sm" class:open={grpBhOpen}></span>
+  </div>
+
+  {#if grpBhOpen}
+    <div class="fx-group-body">
+      <div class="globe-ctrl-row">
+        <span class="globe-ctrl-label">Enabled</span>
+        <div class="globe-toggle" class:on={fxBhEnabled} title="Toggle black hole effect"
+          onclick={() => fx.blackholeEnabled.update(v => !v)} role="switch" aria-checked={fxBhEnabled}
+          tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.blackholeEnabled.update(v => !v)}></div>
+      </div>
+      {#if fxBhEnabled}
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header"><span class="globe-ctrl-label">Size</span><span class="globe-ctrl-label zoom-val">{fxBhSizeLabel}</span></div>
+          <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhSizeVal} title="Black hole size" oninput={handleBhSize} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header"><span class="globe-ctrl-label">Speed</span><span class="globe-ctrl-label zoom-val">{fxBhSpeedLabel}</span></div>
+          <input type="range" class="fx-speed-slider" min="0" max="2000" value={fxBhSpeedVal} title="Black hole animation speed" oninput={handleBhSpeed} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header"><span class="globe-ctrl-label">Glow</span><span class="globe-ctrl-label zoom-val">{fxBhGlowLabel}</span></div>
+          <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhGlowVal} title="Black hole glow intensity" oninput={handleBhGlow} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header"><span class="globe-ctrl-label">Width</span><span class="globe-ctrl-label zoom-val">{fxBhWidthLabel}</span></div>
+          <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhWidthVal} title="Black hole horizontal stretch" oninput={handleBhWidth} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header"><span class="globe-ctrl-label">Height</span><span class="globe-ctrl-label zoom-val">{fxBhHeightLabel}</span></div>
+          <input type="range" class="fx-density-slider" min="0" max="2000" value={fxBhHeightVal} title="Black hole vertical stretch" oninput={handleBhHeight} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header"><span class="globe-ctrl-label">Color</span><span class="globe-ctrl-label zoom-val">{fxBhHueLabel}</span></div>
+          <input type="range" class="bh-hue-slider" min="0" max="360" value={fxBhHueVal} title="Black hole color hue" oninput={handleBhHue} />
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- ═══ Bloom Group ═══════════════════════════════════════════════ -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="fx-group-header" onclick={() => toggleGrp('bloom')}>
+    <span class="fx-group-label">Bloom</span>
+    <span class="chevron-sm" class:open={grpBloomOpen}></span>
+  </div>
+
+  {#if grpBloomOpen}
+    <div class="fx-group-body">
+      <div class="globe-ctrl-row">
+        <span class="globe-ctrl-label">Enabled</span>
+        <div class="globe-toggle" class:on={fxBloom} title="Toggle bloom post-processing"
+          onclick={() => fx.bloomEnabled.update(v => !v)} role="switch" aria-checked={fxBloom}
+          tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.bloomEnabled.update(v => !v)}></div>
+      </div>
+      {#if fxBloom}
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header"><span class="globe-ctrl-label">Strength</span><span class="globe-ctrl-label zoom-val">{fxBloomStrLabel}</span></div>
+          <input type="range" class="fx-density-slider" min="0" max="500" value={fxBloomStrVal} title="Bloom strength" oninput={handleBloomStr} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header"><span class="globe-ctrl-label">Radius</span><span class="globe-ctrl-label zoom-val">{fxBloomRadLabel}</span></div>
+          <input type="range" class="fx-speed-slider" min="0" max="200" value={fxBloomRadVal} title="Bloom radius" oninput={handleBloomRad} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header"><span class="globe-ctrl-label">Threshold</span><span class="globe-ctrl-label zoom-val">{fxBloomThrLabel}</span></div>
+          <input type="range" class="fx-density-slider" min="0" max="100" value={fxBloomThrVal} title="Bloom threshold" oninput={handleBloomThr} />
+        </div>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- ═══ Theme Particles Group ═══════════════════════════════════════ -->
+  {#if hasThemeEffects}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="fx-group-header" onclick={() => toggleGrp('theme')}>
+      <span class="fx-group-label">Theme Particles</span>
+      <span class="chevron-sm" class:open={grpThemeOpen}></span>
+    </div>
+
+    {#if grpThemeOpen}
+      <div class="fx-group-body">
+        {#if isFireTheme}
+          <div class="globe-ctrl-row">
+            <span class="globe-ctrl-label">Embers</span>
+            <div class="globe-toggle" class:on={fxEmbers} title="Toggle fire ember particles"
+              onclick={() => fx.showEmbers.update(v => !v)} role="switch" aria-checked={fxEmbers}
+              tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.showEmbers.update(v => !v)}></div>
+          </div>
+        {/if}
+        {#if isWinterTheme}
+          <div class="globe-ctrl-row">
+            <span class="globe-ctrl-label">Snowflakes</span>
+            <div class="globe-toggle" class:on={fxSnowflakes} title="Toggle falling snowflakes"
+              onclick={() => fx.showSnowflakes.update(v => !v)} role="switch" aria-checked={fxSnowflakes}
+              tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.showSnowflakes.update(v => !v)}></div>
+          </div>
+        {/if}
+        {#if isGalaxyTheme}
+          <div class="globe-ctrl-row">
+            <span class="globe-ctrl-label">Nebula</span>
+            <div class="globe-toggle" class:on={fxNebula} title="Toggle nebula cloud layers"
+              onclick={() => fx.showNebula.update(v => !v)} role="switch" aria-checked={fxNebula}
+              tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.showNebula.update(v => !v)}></div>
+          </div>
+          <div class="globe-ctrl-row">
+            <span class="globe-ctrl-label">Glitter</span>
+            <div class="globe-toggle" class:on={fxGlitter} title="Toggle glitter sparkle effect"
+              onclick={() => fx.showGlitter.update(v => !v)} role="switch" aria-checked={fxGlitter}
+              tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.showGlitter.update(v => !v)}></div>
+          </div>
+          <div class="globe-ctrl-row">
+            <span class="globe-ctrl-label">Comets</span>
+            <div class="globe-toggle" class:on={fxShootStars} title="Toggle shooting star comets"
+              onclick={() => fx.showShootingStars.update(v => !v)} role="switch" aria-checked={fxShootStars}
+              tabindex="0" onkeydown={(e) => e.key === 'Enter' && fx.showShootingStars.update(v => !v)}></div>
+          </div>
+        {/if}
       </div>
     {/if}
+  {/if}
 
-    <!-- Arc Glow -->
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">Arc Glow</span>
-        <span class="globe-ctrl-label zoom-val">{fxElecArcIntLabel}</span>
-      </div>
-      <input
-        type="range"
-        class="fx-density-slider"
-        min="0"
-        max="2000"
-        value={fxElecArcIntVal}
-        title="Electric arc brightness (0% = off, 2000% = extreme)"
-        oninput={handleElecArcIntensity}
-      />
-    </div>
+  <!-- ═══ Master Controls Group ═══════════════════════════════════════ -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="fx-group-header" onclick={() => toggleGrp('master')}>
+    <span class="fx-group-label">Master Controls</span>
+    <span class="chevron-sm" class:open={grpMasterOpen}></span>
+  </div>
 
-    <!-- Arc Speed -->
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">Arc Speed</span>
-        <span class="globe-ctrl-label zoom-val">{fxElecArcSpdLabel}</span>
-      </div>
-      <input
-        type="range"
-        class="fx-speed-slider"
-        min="0"
-        max="2000"
-        value={fxElecArcSpdVal}
-        title="Arc animation speed (0% = frozen, 2000% = extreme)"
-        oninput={handleElecArcSpeed}
-      />
-    </div>
-
-    <!-- Arc Count -->
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">Arc Count</span>
-        <span class="globe-ctrl-label zoom-val">{fxElecArcCntLabel}</span>
-      </div>
-      <input
-        type="range"
-        class="fx-density-slider"
-        min="0"
-        max="2000"
-        value={fxElecArcCntVal}
-        title="Number of electric arcs & orbit rings (0% = none, 2000% = extreme)"
-        oninput={handleElecArcCount}
-      />
-    </div>
-
-    <!-- Orbit Speed -->
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">Orbit Speed</span>
-        <span class="globe-ctrl-label zoom-val">{fxElecOrbitSpdLabel}</span>
-      </div>
-      <input
-        type="range"
-        class="fx-speed-slider"
-        min="0"
-        max="2000"
-        value={fxElecOrbitSpdVal}
-        title="Energy ring orbit rotation speed (0% = frozen, 2000% = extreme)"
-        oninput={handleElecOrbitSpeed}
-      />
-    </div>
-
-    <!-- Core Glow -->
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">Core Glow</span>
-        <span class="globe-ctrl-label zoom-val">{fxElecCoreGlowLabel}</span>
-      </div>
-      <input
-        type="range"
-        class="fx-density-slider"
-        min="0"
-        max="2000"
-        value={fxElecCoreGlowVal}
-        title="Central energy core brightness (0% = off, 2000% = extreme)"
-        oninput={handleElecCoreGlow}
-      />
-    </div>
-
-  <!-- Density slider (always visible) -->
-    <div class="globe-ctrl-row fx-slider-row">
-      <div class="zoom-header">
-        <span class="globe-ctrl-label">Density</span>
-        <span class="globe-ctrl-label zoom-val">{fxDensityLabel}</span>
-      </div>
+  {#if grpMasterOpen}
+    <div class="fx-group-body">
+      <div class="globe-ctrl-row fx-slider-row">
+        <div class="zoom-header">
+          <span class="globe-ctrl-label">Density</span>
+          <span class="globe-ctrl-label zoom-val">{fxDensityLabel}</span>
+        </div>
       <input
         type="range"
         class="fx-density-slider"
@@ -1147,6 +1116,9 @@
         oninput={handleFxSpeed}
       />
     </div>
+    </div>
+  {/if}
+
   {/if}
 
   <div class="divider"></div>
@@ -1503,6 +1475,52 @@
   .fx-title {
     margin-top: 2px;
     margin-bottom: 8px;
+  }
+
+  /* ── Effect sub-group headers ─────────────────────── */
+  .fx-group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+    padding: 4px 2px;
+    margin: 2px 0 1px;
+    border-left: 2px solid var(--accent);
+    padding-left: 8px;
+    transition: all 0.2s;
+  }
+  .fx-group-header:hover {
+    background: rgba(0, 212, 255, 0.04);
+  }
+  .fx-group-label {
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    transition: color 0.2s;
+  }
+  .fx-group-header:hover .fx-group-label {
+    color: var(--accent);
+  }
+  .chevron-sm {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    border-left: 3px solid transparent;
+    border-right: 3px solid transparent;
+    border-top: 4px solid var(--text-dim);
+    transition: transform 0.2s ease;
+    transform: rotate(-90deg);
+  }
+  .chevron-sm.open {
+    transform: rotate(0deg);
+  }
+  .fx-group-body {
+    padding: 2px 0 4px 6px;
+    border-left: 1px solid rgba(0, 212, 255, 0.08);
+    margin-left: 4px;
+    margin-bottom: 2px;
   }
 
   .fx-slider-row {

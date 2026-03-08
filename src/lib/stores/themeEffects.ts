@@ -52,6 +52,16 @@ export const bloomStrength = writable<number>(1);    // 0–5
 export const bloomRadius = writable<number>(0.4);    // 0–2
 export const bloomThreshold = writable<number>(0.3); // 0–1
 
+/** Fireworks effect — 3D firework explosions around the globe */
+export const fireworksEnabled = writable<boolean>(false);
+export const fireworksSpeed = writable<number>(1);       // 0.25–3 animation speed
+export const fireworksLaunchRate = writable<number>(1);   // 0.25–3 rockets per interval
+export const fireworksBurstSize = writable<number>(1);    // 0.2–3 particle count & spread
+export const fireworksMiddleFire = writable<boolean>(true);  // secondary inner burst
+export const fireworksColorful = writable<boolean>(true);    // random colorful mode
+export const fireworksNoLimit = writable<boolean>(false);    // unlimited concurrent
+export const fireworksHue = writable<number>(0);             // 0 = auto, 1–360 = specific color
+
 /** Black hole effect — standalone animated effect available on any theme */
 export const blackholeEnabled = writable<boolean>(false);
 export const blackholeSize = writable<number>(1);      // 0–20: overall scale (0.01x–20x)

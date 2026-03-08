@@ -1,13 +1,12 @@
 <script lang="ts">
-  import { presets, activePresetName, applyPreset, savePreset, deletePreset, initPresets, resetToDefaults, exportPresets, importPresets } from '../../lib/stores/presetState';
+  import { presets, activePresetName, applyPreset, savePreset, deletePreset, initPresets, resetToDefaults, exportPresetsAsFile, importPresetsFromFile } from '../../lib/stores/presetState';
   import type { Preset } from '../../lib/stores/presetState';
 
   let presetList = $state<Preset[]>([]);
   let activeName = $state<string | null>(null);
   let showSaveInput = $state(false);
   let newPresetName = $state('');
-  let showImportInput = $state(false);
-  let importJson = $state('');
+  let importStatus = $state('');
 
   $effect(() => {
     initPresets();
@@ -38,21 +37,21 @@
   }
 
   function handleExport(): void {
-    const json = exportPresets();
-    navigator.clipboard.writeText(json).then(() => {
-      // brief visual feedback handled by button text
-    });
+    exportPresetsAsFile();
   }
 
-  function handleImport(): void {
-    const count = importPresets(importJson);
+  async function handleImport(): Promise<void> {
+    const count = await importPresetsFromFile();
     if (count > 0) {
-      importJson = '';
-      showImportInput = false;
+      importStatus = `Imported ${count} preset${count > 1 ? 's' : ''}`;
+      setTimeout(() => { importStatus = ''; }, 2000);
+    } else {
+      importStatus = 'No presets found';
+      setTimeout(() => { importStatus = ''; }, 2000);
     }
   }
 
-  const builtinNames = ['Chill', 'Low Energy', 'MAX'];
+  const builtinNames = ['Chill', 'Low Energy', 'Fireworks', 'MAX'];
 
   // ── Preset thumbnail color mapping ────────────────────────────────────────
   const THEME_COLORS: Record<string, string> = {
@@ -114,22 +113,12 @@
 
   <div class="preset-actions">
     <button class="preset-reset-btn" onclick={() => { resetToDefaults(); document.dispatchEvent(new CustomEvent('kg:reset')); }} title="Reset all effects to defaults">Reset</button>
-    <button class="preset-reset-btn" onclick={handleExport} title="Copy presets to clipboard">Export</button>
-    <button class="preset-reset-btn" onclick={() => { showImportInput = !showImportInput; }} title="Import presets from JSON">Import</button>
+    <button class="preset-reset-btn" onclick={handleExport} title="Download presets as .json file">Export</button>
+    <button class="preset-reset-btn" onclick={handleImport} title="Import presets from .json file">Import</button>
   </div>
 
-  {#if showImportInput}
-    <div class="preset-save-row" style="margin-bottom:4px">
-      <input
-        class="preset-input"
-        type="text"
-        placeholder="Paste JSON..."
-        bind:value={importJson}
-        onkeydown={(e) => e.key === 'Enter' && handleImport()}
-      />
-      <button class="preset-save-btn" onclick={handleImport}>OK</button>
-      <button class="preset-save-btn cancel" onclick={() => { showImportInput = false; }}>X</button>
-    </div>
+  {#if importStatus}
+    <div class="import-status">{importStatus}</div>
   {/if}
 
   {#if showSaveInput}
@@ -294,5 +283,12 @@
     background: rgba(255,50,50,0.1);
     border-color: #ff5555;
     color: #ff5555;
+  }
+  .import-status {
+    font-size: 9px;
+    color: var(--accent);
+    text-align: center;
+    padding: 2px 0;
+    letter-spacing: 0.5px;
   }
 </style>

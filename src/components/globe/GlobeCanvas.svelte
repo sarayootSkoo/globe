@@ -10,6 +10,7 @@
   import { GlobeConnectionPulse } from '../../lib/renderers/GlobeConnectionPulse';
   import { GlobeNodeTrail } from '../../lib/renderers/GlobeNodeTrail';
   import { GlobeAutoTour } from '../../lib/renderers/GlobeAutoTour';
+  import { GlobeFireworks } from '../../lib/renderers/GlobeFireworks';
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
   import { glowLevel, selectedNodeId, theme, activeCats } from '../../lib/stores/appState';
   import * as fx from '../../lib/stores/themeEffects';
@@ -37,6 +38,7 @@
   let connectionPulse: GlobeConnectionPulse | null = null;
   let nodeTrail: GlobeNodeTrail | null = null;
   let autoTour: GlobeAutoTour | null = null;
+  let fireworks: GlobeFireworks | null = null;
 
   // ── Reactive state that mirrors stores ───────────────────────────────────────
   let visible = $state(true);   // drives class:show — true = globe layout active
@@ -58,6 +60,7 @@
     nodeExplosion   = new GlobeNodeExplosion(renderer.scene);
     connectionPulse = new GlobeConnectionPulse(renderer.scene);
     nodeTrail       = new GlobeNodeTrail(renderer.scene);
+    fireworks    = new GlobeFireworks(renderer.scene);
     autoTour = new GlobeAutoTour({
       flyTo: (pos, dist) => renderer?.flyTo(pos, dist),
       onNodeFocus: (node) => {
@@ -170,6 +173,7 @@
       renderer?.updateTheme(t);
       electricArcs?.setTheme(t);
       electricArcs?.setEnabled(true);
+      fireworks?.setTheme(t);
     });
 
     // ── Electric arc effect stores ────────────────────────────────────────
@@ -202,6 +206,32 @@
     });
     const unsubSparkRate = fx.sparkBurstRate.subscribe(v => {
       electricArcs?.setSparkRate(v);
+    });
+
+    // ── Fireworks effect stores ───────────────────────────────────────────
+    const unsubFwEnabled = fx.fireworksEnabled.subscribe(v => {
+      fireworks?.setEnabled(v);
+    });
+    const unsubFwSpeed = fx.fireworksSpeed.subscribe(v => {
+      fireworks?.setSpeed(v);
+    });
+    const unsubFwRate = fx.fireworksLaunchRate.subscribe(v => {
+      fireworks?.setLaunchRate(v);
+    });
+    const unsubFwSize = fx.fireworksBurstSize.subscribe(v => {
+      fireworks?.setBurstSize(v);
+    });
+    const unsubFwMiddle = fx.fireworksMiddleFire.subscribe(v => {
+      fireworks?.setMiddleFire(v);
+    });
+    const unsubFwColorful = fx.fireworksColorful.subscribe(v => {
+      fireworks?.setColorful(v);
+    });
+    const unsubFwNoLimit = fx.fireworksNoLimit.subscribe(v => {
+      fireworks?.setNoLimit(v);
+    });
+    const unsubFwHue = fx.fireworksHue.subscribe(v => {
+      fireworks?.setPickedHue(v);
     });
 
     // ── React to autoRotate store ────────────────────────────────────────────
@@ -341,6 +371,9 @@
       // ── Connection pulse update ───────────────────────────────────────────
       if (connectionPulse) connectionPulse.update(0.016);
 
+      // ── Fireworks update ──────────────────────────────────────────────────
+      if (fireworks) fireworks.update(0.016);
+
       // ── Auto tour update ──────────────────────────────────────────────────
       if (autoTour) autoTour.update(0.016);
 
@@ -391,6 +424,14 @@
       unsubSparkBurst();
       unsubSparkInt();
       unsubSparkRate();
+      unsubFwEnabled();
+      unsubFwSpeed();
+      unsubFwRate();
+      unsubFwSize();
+      unsubFwMiddle();
+      unsubFwColorful();
+      unsubFwNoLimit();
+      unsubFwHue();
       document.removeEventListener('kg:flyto', handleFlyTo);
       document.removeEventListener('kg:autotour', handleAutoTour);
       document.removeEventListener('kg:reset', handleReset);
@@ -417,6 +458,7 @@
     wasd?.dispose();
     comets?.dispose();
     electricArcs?.dispose();
+    fireworks?.dispose();
     nodeExplosion?.dispose();
     connectionPulse?.dispose();
     nodeTrail?.dispose();
