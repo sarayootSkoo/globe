@@ -7,6 +7,8 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #9516 | 2:06 PM | ✅ | BorderMagic Component Added to Background Layers | ~487 |
+| #9511 | 2:00 PM | 🟣 | App Settings Persistence on Startup | ~460 |
 | #9469 | 12:48 PM | 🔄 | Removed SearchResults component from main App | ~229 |
 | #9444 | 12:27 PM | 🔄 | Extracted CSS from HTML to dedicated stylesheet | ~347 |
 </claude-mem-context>

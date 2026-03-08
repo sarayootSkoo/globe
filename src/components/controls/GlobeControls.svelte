@@ -16,6 +16,7 @@
   let pulseSpeedVal   = $state(60);   // raw slider value 10–200
   let rotateSpeedVal  = $state(35);   // raw slider value 5–200
   let zoomVal         = $state(55);   // raw slider value 10–100
+  let opacityVal      = $state(100);  // raw slider value 10–100 → 0.1–1.0
 
   let wasdPopupOpen = $state(false);
 
@@ -44,6 +45,11 @@
   let fxSnowflakes  = $state(true);
   let fxBgStars     = $state(true);
   let fxBgMesh      = $state(true);
+  let fxLightning   = $state(true);
+  let fxElecArcs    = $state(true);
+  let fxPlasmaAura  = $state(true);
+  let fxElecArcIntVal = $state(100); // 20–200 → 0.2–2
+  let fxElecArcSpdVal = $state(100); // 25–300 → 0.25–3
   let fxBorder      = $state(true);
   let fxBorderIntVal = $state(100);  // 20–200 → 0.2–2
   let fxBorderSpdVal = $state(100);  // 25–300 → 0.25–3
@@ -59,6 +65,7 @@
     const u7  = globeStore.pulseSpeed.subscribe(v    => { pulseSpeedVal  = Math.round(v * 100); });
     const u8  = globeStore.rotateSpeed.subscribe(v   => { rotateSpeedVal = Math.round(v * 100); });
     const u9  = globeStore.zoomLevel.subscribe(v     => { zoomVal = v; });
+    const u28 = globeStore.globeOpacity.subscribe(v  => { opacityVal = Math.round(v * 100); });
     const u10 = theme.subscribe(v                    => { currentTheme = v; });
     const u11 = fx.effectDensity.subscribe(v         => { fxDensityVal = Math.round(v * 100); });
     const u12 = fx.effectSpeed.subscribe(v           => { fxSpeedVal = Math.round(v * 100); });
@@ -67,6 +74,11 @@
     const u15 = fx.showShootingStars.subscribe(v     => { fxShootStars = v; });
     const u16 = fx.showEmbers.subscribe(v            => { fxEmbers = v; });
     const u17 = fx.showSnowflakes.subscribe(v        => { fxSnowflakes = v; });
+    const u23 = fx.showLightning.subscribe(v         => { fxLightning = v; });
+    const u24 = fx.showElectricArcs.subscribe(v      => { fxElecArcs = v; });
+    const u25 = fx.showPlasmaAura.subscribe(v        => { fxPlasmaAura = v; });
+    const u26 = fx.electricArcIntensity.subscribe(v  => { fxElecArcIntVal = Math.round(v * 100); });
+    const u27 = fx.electricArcSpeed.subscribe(v      => { fxElecArcSpdVal = Math.round(v * 100); });
     const u18 = fx.showBgStars.subscribe(v           => { fxBgStars = v; });
     const u19 = fx.showBgMesh.subscribe(v            => { fxBgMesh = v; });
     const u20 = fx.borderEnabled.subscribe(v         => { fxBorder = v; });
@@ -74,12 +86,13 @@
     const u22 = fx.borderSpeed.subscribe(v           => { fxBorderSpdVal = Math.round(v * 100); });
     return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9();
                    u10(); u11(); u12(); u13(); u14(); u15(); u16(); u17(); u18(); u19();
-                   u20(); u21(); u22(); };
+                   u20(); u21(); u22(); u23(); u24(); u25(); u26(); u27(); u28(); };
   });
 
   // ── Zoom display label ───────────────────────────────────────────────────────
   // 55 is the default (100%). Scale linearly relative to that.
-  let zoomLabel = $derived(Math.round(zoomVal * 100 / 55) + '%');
+  let zoomLabel    = $derived(Math.round(zoomVal * 100 / 55) + '%');
+  let opacityLabel = $derived(opacityVal + '%');
 
   // ---------------------------------------------------------------------------
   // Toggle handlers
@@ -127,8 +140,12 @@
     const raw = parseInt((e.target as HTMLInputElement).value, 10);
     zoomVal = raw;
     globeStore.zoomLevel.set(raw);
-    // Camera distance: 1800 - (val/100)*1400
-    // Actual camera movement is handled by the GlobeCanvas subscriber
+  }
+
+  function handleOpacity(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    opacityVal = raw;
+    globeStore.globeOpacity.set(raw / 100); // 10–100 → 0.1–1.0
   }
 
   // ---------------------------------------------------------------------------
@@ -153,8 +170,9 @@
   // Which effects are relevant for the current theme
   let isFireTheme   = $derived(currentTheme === 'fire');
   let isWinterTheme = $derived(currentTheme === 'winter');
-  let isGalaxyTheme = $derived(currentTheme === 'galaxy');
-  let hasThemeEffects = $derived(isFireTheme || isWinterTheme || isGalaxyTheme);
+  let isGalaxyTheme   = $derived(currentTheme === 'galaxy');
+  let isElectricTheme = $derived(currentTheme === 'electric');
+  let hasThemeEffects = $derived(isFireTheme || isWinterTheme || isGalaxyTheme || isElectricTheme);
 
   function handleFxDensity(e: Event): void {
     const raw = parseInt((e.target as HTMLInputElement).value, 10);
@@ -166,8 +184,20 @@
     fx.effectSpeed.set(raw / 100);
   }
 
+  let fxElecArcIntLabel = $derived(fxElecArcIntVal + '%');
+  let fxElecArcSpdLabel = $derived(fxElecArcSpdVal + '%');
   let fxBorderIntLabel = $derived(fxBorderIntVal + '%');
   let fxBorderSpdLabel = $derived(fxBorderSpdVal + '%');
+
+  function handleElecArcIntensity(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.electricArcIntensity.set(raw / 100);
+  }
+
+  function handleElecArcSpeed(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.electricArcSpeed.set(raw / 100);
+  }
 
   function handleBorderIntensity(e: Event): void {
     const raw = parseInt((e.target as HTMLInputElement).value, 10);
@@ -326,6 +356,23 @@
       value={zoomVal}
       title="Camera distance (zoom)"
       oninput={handleZoom}
+    />
+  </div>
+
+  <!-- Globe Opacity -->
+  <div class="globe-ctrl-row zoom-row">
+    <div class="zoom-header">
+      <span class="globe-ctrl-label">Opacity</span>
+      <span class="globe-ctrl-label zoom-val">{opacityLabel}</span>
+    </div>
+    <input
+      type="range"
+      class="globe-opacity-slider"
+      min="10"
+      max="100"
+      value={opacityVal}
+      title="Globe wireframe & dot opacity (reduce to prevent blowout with effects)"
+      oninput={handleOpacity}
     />
   </div>
 
@@ -510,6 +557,83 @@
         onkeydown={(e) => e.key === 'Enter' && fx.showShootingStars.update(v => !v)}
       ></div>
     </div>
+  {/if}
+
+  {#if isElectricTheme}
+    <div class="globe-ctrl-row">
+      <span class="globe-ctrl-label">Lightning</span>
+      <div
+        class="globe-toggle"
+        class:on={fxLightning}
+        title="Toggle background lightning bolts"
+        onclick={() => fx.showLightning.update(v => !v)}
+        role="switch"
+        aria-checked={fxLightning}
+        tabindex="0"
+        onkeydown={(e) => e.key === 'Enter' && fx.showLightning.update(v => !v)}
+      ></div>
+    </div>
+
+    <div class="globe-ctrl-row">
+      <span class="globe-ctrl-label">Globe Arcs</span>
+      <div
+        class="globe-toggle"
+        class:on={fxElecArcs}
+        title="Toggle electric arcs around the globe"
+        onclick={() => fx.showElectricArcs.update(v => !v)}
+        role="switch"
+        aria-checked={fxElecArcs}
+        tabindex="0"
+        onkeydown={(e) => e.key === 'Enter' && fx.showElectricArcs.update(v => !v)}
+      ></div>
+    </div>
+
+    <div class="globe-ctrl-row">
+      <span class="globe-ctrl-label">Plasma Aura</span>
+      <div
+        class="globe-toggle"
+        class:on={fxPlasmaAura}
+        title="Toggle plasma glow aura around globe"
+        onclick={() => fx.showPlasmaAura.update(v => !v)}
+        role="switch"
+        aria-checked={fxPlasmaAura}
+        tabindex="0"
+        onkeydown={(e) => e.key === 'Enter' && fx.showPlasmaAura.update(v => !v)}
+      ></div>
+    </div>
+
+    {#if fxElecArcs || fxPlasmaAura}
+      <div class="globe-ctrl-row fx-slider-row">
+        <div class="zoom-header">
+          <span class="globe-ctrl-label">Arc Glow</span>
+          <span class="globe-ctrl-label zoom-val">{fxElecArcIntLabel}</span>
+        </div>
+        <input
+          type="range"
+          class="fx-density-slider"
+          min="20"
+          max="200"
+          value={fxElecArcIntVal}
+          title="Electric arc brightness (20% = faint, 200% = bright)"
+          oninput={handleElecArcIntensity}
+        />
+      </div>
+      <div class="globe-ctrl-row fx-slider-row">
+        <div class="zoom-header">
+          <span class="globe-ctrl-label">Arc Speed</span>
+          <span class="globe-ctrl-label zoom-val">{fxElecArcSpdLabel}</span>
+        </div>
+        <input
+          type="range"
+          class="fx-speed-slider"
+          min="25"
+          max="300"
+          value={fxElecArcSpdVal}
+          title="Arc animation speed (25% = slow, 300% = fast)"
+          oninput={handleElecArcSpeed}
+        />
+      </div>
+    {/if}
   {/if}
 
   <!-- Density slider (always visible when theme has effects) -->
@@ -753,6 +877,39 @@
     background: var(--green);
     border: 2px solid var(--bg);
     box-shadow: 0 0 5px var(--green);
+    cursor: pointer;
+  }
+
+  /* Opacity slider — white/accent */
+  .globe-opacity-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--text-dim) 0%, #ffffff 100%);
+    outline: none;
+    cursor: pointer;
+    margin: 4px 0;
+  }
+  .globe-opacity-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+  }
+  .globe-opacity-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
     cursor: pointer;
   }
 

@@ -5,8 +5,10 @@
   import { GlobeRenderer } from '../../lib/renderers/GlobeRenderer';
   import { GlobeWASD } from '../../lib/renderers/GlobeWASD';
   import { GlobeCometTrails } from '../../lib/renderers/GlobeCometTrails';
+  import { GlobeElectricArcs } from '../../lib/renderers/GlobeElectricArcs';
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
   import { glowLevel, selectedNodeId, theme, activeCats } from '../../lib/stores/appState';
+  import * as fx from '../../lib/stores/themeEffects';
   import { searchMatched } from '../../lib/stores/searchState';
   import * as globeStore from '../../lib/stores/globeState';
   import { showPreview } from '../../lib/stores/previewState';
@@ -26,6 +28,7 @@
   let renderer: GlobeRenderer | null = null;
   let wasd: GlobeWASD | null = null;
   let comets: GlobeCometTrails | null = null;
+  let electricArcs: GlobeElectricArcs | null = null;
 
   // ── Reactive state that mirrors stores ───────────────────────────────────────
   let visible = $state(true);   // drives class:show — true = globe layout active
@@ -40,9 +43,10 @@
   // onMount — create renderer and wire everything together
   // ---------------------------------------------------------------------------
   onMount(() => {
-    renderer = new GlobeRenderer(canvas);
-    wasd     = new GlobeWASD(renderer.camera, renderer.controls);
-    comets   = new GlobeCometTrails(renderer.scene);
+    renderer     = new GlobeRenderer(canvas);
+    wasd         = new GlobeWASD(renderer.camera, renderer.controls);
+    comets       = new GlobeCometTrails(renderer.scene);
+    electricArcs = new GlobeElectricArcs(renderer.scene);
 
     // ── Wire renderer callbacks ─────────────────────────────────────────────
 
@@ -108,6 +112,21 @@
     // ── React to theme changes ──────────────────────────────────────────────
     const unsubTheme = theme.subscribe(t => {
       renderer?.updateTheme(t);
+      electricArcs?.setEnabled(t === 'electric');
+    });
+
+    // ── Electric arc effect stores ────────────────────────────────────────
+    const unsubElecArcs = fx.showElectricArcs.subscribe(v => {
+      electricArcs?.setShowArcs(v);
+    });
+    const unsubPlasmaAura = fx.showPlasmaAura.subscribe(v => {
+      electricArcs?.setShowAura(v);
+    });
+    const unsubElecInt = fx.electricArcIntensity.subscribe(v => {
+      electricArcs?.setIntensity(v);
+    });
+    const unsubElecSpd = fx.electricArcSpeed.subscribe(v => {
+      electricArcs?.setSpeed(v);
     });
 
     // ── React to autoRotate store ────────────────────────────────────────────
@@ -179,6 +198,11 @@
         }
       }
 
+      // ── Electric arcs update ──────────────────────────────────────────────
+      if (electricArcs) {
+        electricArcs.update(0.016);
+      }
+
       // ── Comet trails update ────────────────────────────────────────────────
       if (comets && wasd) {
         comets.update(
@@ -197,6 +221,7 @@
         showWireframe: get(globeStore.showWireframe),
         showDots:      get(globeStore.showDots),
         showLinks:     get(globeStore.showLinks),
+        globeOpacity:  get(globeStore.globeOpacity),
       });
     }
 
@@ -213,6 +238,10 @@
       unsubRotateSpeed();
       unsubComet();
       unsubCats();
+      unsubElecArcs();
+      unsubPlasmaAura();
+      unsubElecInt();
+      unsubElecSpd();
       document.removeEventListener('kg:flyto', handleFlyTo);
     };
   });
@@ -231,6 +260,7 @@
     renderer?.dispose();
     wasd?.dispose();
     comets?.dispose();
+    electricArcs?.dispose();
   });
 
   // ---------------------------------------------------------------------------

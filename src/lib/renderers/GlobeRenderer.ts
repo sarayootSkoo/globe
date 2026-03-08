@@ -44,6 +44,7 @@ export interface AnimateParams {
   showWireframe: boolean;
   showDots: boolean;
   showLinks: boolean;
+  globeOpacity: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -412,6 +413,17 @@ export class GlobeRenderer {
     if (this.wireframe)    this.wireframe.visible    = params.showWireframe;
     if (this.dotParticles) this.dotParticles.visible = params.showDots;
     this.linkLines.forEach(l => { l.visible = params.showLinks; });
+
+    // ── Globe opacity ───────────────────────────────────────────────────
+    const gOp = params.globeOpacity;
+    if (this.wireframe) {
+      (this.wireframe.material as THREE.MeshBasicMaterial).opacity =
+        (0.02 + 0.04 * params.glowLevel) * gOp;
+    }
+    if (this.dotParticles) {
+      (this.dotParticles.material as THREE.PointsMaterial).opacity =
+        (0.25 + 0.25 * params.glowLevel) * gOp;
+    }
 
     // ── Pulse animation ────────────────────────────────────────────────────
     if (params.pulseEnabled && !this.hovered) {
@@ -960,7 +972,7 @@ export class GlobeRenderer {
 
     // Wireframe color per theme
     const wireColors: Record<string, number> = {
-      dark: 0x00d4ff, light: 0x1e40af, fire: 0xff6a00, winter: 0x7ec8ff, galaxy: 0xb46aff,
+      dark: 0x00d4ff, light: 0x1e40af, fire: 0xff6a00, winter: 0x7ec8ff, galaxy: 0xb46aff, electric: 0x3c8cff,
     };
     if (this.wireframe) {
       (this.wireframe.material as THREE.MeshBasicMaterial).color.setHex(
@@ -1000,6 +1012,13 @@ export class GlobeRenderer {
             t * 0.9 + (1 - t) * 0.5,
             t * 0.4 + (1 - t) * 0.15,
             t * 1.0 + (1 - t) * 0.8,
+          );
+        } else if (themeName === 'electric') {
+          // Electric blue bottom → bright white-blue top
+          colors.push(
+            t * 0.6 + (1 - t) * 0.1,
+            t * 0.85 + (1 - t) * 0.3,
+            t * 1.0 + (1 - t) * 0.9,
           );
         } else if (themeName === 'light') {
           // Blue gradient for light theme

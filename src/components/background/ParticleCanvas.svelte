@@ -41,6 +41,7 @@
       fx.showShootingStars.subscribe(v => renderer?.updateSettings({ showShootingStars: v })),
       fx.showEmbers.subscribe(v       => renderer?.updateSettings({ showEmbers: v })),
       fx.showSnowflakes.subscribe(v   => renderer?.updateSettings({ showSnowflakes: v })),
+      fx.showLightning.subscribe(v    => renderer?.updateSettings({ showLightning: v })),
       fx.showBgStars.subscribe(v      => renderer?.updateSettings({ showBgStars: v })),
       fx.showBgMesh.subscribe(v       => renderer?.updateSettings({ showBgMesh: v })),
     ];

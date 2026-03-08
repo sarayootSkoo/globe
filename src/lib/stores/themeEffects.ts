@@ -21,6 +21,13 @@ export const showGlitter = writable<boolean>(true);
 export const showShootingStars = writable<boolean>(true);
 export const showEmbers = writable<boolean>(true);
 export const showSnowflakes = writable<boolean>(true);
+export const showLightning = writable<boolean>(true);
+
+/** Electric globe-specific effects */
+export const showElectricArcs = writable<boolean>(true);
+export const showPlasmaAura = writable<boolean>(true);
+export const electricArcIntensity = writable<number>(1);  // 0.2–2
+export const electricArcSpeed = writable<number>(1);       // 0.25–3
 
 /** Background stars (shared across all themes) */
 export const showBgStars = writable<boolean>(true);

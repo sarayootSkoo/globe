@@ -14,7 +14,7 @@ import type { Theme } from './appState';
 import * as globe from './globeState';
 import * as fx from './themeEffects';
 
-const VALID_THEMES: readonly Theme[] = ['dark', 'light', 'fire', 'winter', 'galaxy'];
+const VALID_THEMES: readonly Theme[] = ['dark', 'light', 'fire', 'winter', 'galaxy', 'electric'];
 
 // ── Debounce helper for sliders ──────────────────────────────────────────────
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -61,6 +61,7 @@ function buildEntries(): PersistEntry<any>[] {
     num(globe.pulseSpeed,     'globe.pulseSpeed',  0.6,  0.1, 2),
     num(globe.rotateSpeed,    'globe.rotateSpeed', 0.35, 0.05, 2),
     num(globe.zoomLevel,      'globe.zoom',        55,   10, 100),
+    num(globe.globeOpacity,   'globe.opacity',     1,    0.1, 1),
 
     // Theme effects
     num(fx.effectDensity, 'fx.density', 1,    0.1, 2),
@@ -70,6 +71,11 @@ function buildEntries(): PersistEntry<any>[] {
     bool(fx.showShootingStars,'fx.shootStars', true),
     bool(fx.showEmbers,       'fx.embers',     true),
     bool(fx.showSnowflakes,   'fx.snowflakes', true),
+    bool(fx.showLightning,    'fx.lightning',  true),
+    bool(fx.showElectricArcs, 'fx.elecArcs',   true),
+    bool(fx.showPlasmaAura,   'fx.plasmaAura', true),
+    num(fx.electricArcIntensity, 'fx.elecArcInt', 1, 0.2, 2),
+    num(fx.electricArcSpeed,     'fx.elecArcSpd', 1, 0.25, 3),
     bool(fx.showBgStars,      'fx.bgStars',    true),
     bool(fx.showBgMesh,       'fx.bgMesh',     true),
 

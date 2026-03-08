@@ -93,7 +93,32 @@ const NEBULA_COUNT = 50;
 const GLITTER_COUNT = 200;
 const SHOOTING_STAR_MAX = 4;  // max concurrent shooting stars
 
-export type ParticleTheme = 'dark' | 'light' | 'fire' | 'winter' | 'galaxy';
+// ── Electric lightning bolt ───────────────────────────────────────────────
+interface LightningBolt {
+  x0: number; y0: number;     // start point
+  x1: number; y1: number;     // end point
+  life: number;               // 0..1 remaining
+  decay: number;
+  segments: { x: number; y: number }[];  // jagged path points
+  branches: { x: number; y: number }[][]; // forked sub-paths
+  width: number;
+  hue: number;                // 200–240 range (blue to electric blue)
+}
+
+// ── Electric plasma spark ─────────────────────────────────────────────────
+interface PlasmaSpark {
+  x: number; y: number;
+  vx: number; vy: number;
+  life: number;
+  decay: number;
+  r: number;
+  hue: number;
+}
+
+const LIGHTNING_MAX = 3;      // max concurrent lightning bolts
+const PLASMA_SPARK_COUNT = 80;
+
+export type ParticleTheme = 'dark' | 'light' | 'fire' | 'winter' | 'galaxy' | 'electric';
 
 /** Runtime-adjustable settings pushed from the UI stores */
 export interface EffectSettings {
@@ -104,6 +129,7 @@ export interface EffectSettings {
   showShootingStars: boolean;
   showEmbers: boolean;
   showSnowflakes: boolean;
+  showLightning: boolean;
   showBgStars: boolean;
   showBgMesh: boolean;
 }
@@ -111,7 +137,7 @@ export interface EffectSettings {
 const DEFAULT_SETTINGS: EffectSettings = {
   density: 1, speed: 1,
   showNebula: true, showGlitter: true, showShootingStars: true,
-  showEmbers: true, showSnowflakes: true,
+  showEmbers: true, showSnowflakes: true, showLightning: true,
   showBgStars: true, showBgMesh: true,
 };
 
@@ -142,6 +168,11 @@ export class ParticleBackground {
   private _shootingTimer = 0;       // frames until next comet spawns
   private _frameCount = 0;          // global frame counter for time-based fx
 
+  // Electric-specific
+  private lightningBolts: LightningBolt[] = [];
+  private _lightningTimer = 0;
+  private plasmaSparks: PlasmaSpark[] = [];
+
   animId: number | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -161,6 +192,7 @@ export class ParticleBackground {
     this._buildSnowflakes(canvas.width, canvas.height);
     this._buildNebula(canvas.width, canvas.height);
     this._buildGlitter(canvas.width, canvas.height);
+    this._buildPlasma(canvas.width, canvas.height);
   }
 
   // ── Initialisation ──────────────────────────────────────────────────────────
@@ -277,6 +309,87 @@ export class ParticleBackground {
     };
   }
 
+  private _buildPlasma(W: number, H: number): void {
+    this.plasmaSparks = Array.from({ length: PLASMA_SPARK_COUNT }, () => this._spawnPlasmaSpark(W, H));
+    this.lightningBolts = [];
+    this._lightningTimer = 30 + Math.random() * 60;
+  }
+
+  private _spawnPlasmaSpark(W: number, H: number): PlasmaSpark {
+    return {
+      x: Math.random() * W,
+      y: Math.random() * H,
+      vx: (Math.random() - 0.5) * 1.2,
+      vy: (Math.random() - 0.5) * 1.2,
+      life: 1,
+      decay: Math.random() * 0.008 + 0.003,
+      r: Math.random() * 2 + 0.5,
+      hue: 200 + Math.random() * 40,
+    };
+  }
+
+  private _spawnLightning(W: number, H: number): LightningBolt {
+    // Random start and end, biased toward screen edges
+    const fromEdge = Math.random() > 0.3;
+    let x0: number, y0: number, x1: number, y1: number;
+
+    if (fromEdge) {
+      const edge = Math.floor(Math.random() * 4);
+      switch (edge) {
+        case 0: x0 = Math.random() * W; y0 = 0; break;
+        case 1: x0 = W; y0 = Math.random() * H; break;
+        case 2: x0 = Math.random() * W; y0 = H; break;
+        default: x0 = 0; y0 = Math.random() * H; break;
+      }
+      x1 = x0 + (Math.random() - 0.5) * W * 0.6;
+      y1 = y0 + (Math.random() - 0.5) * H * 0.6;
+    } else {
+      x0 = Math.random() * W;
+      y0 = Math.random() * H;
+      x1 = x0 + (Math.random() - 0.5) * 300;
+      y1 = y0 + (Math.random() - 0.5) * 300;
+    }
+
+    // Generate jagged segments
+    const segCount = 12 + Math.floor(Math.random() * 10);
+    const segments: { x: number; y: number }[] = [];
+    const branches: { x: number; y: number }[][] = [];
+
+    for (let i = 0; i <= segCount; i++) {
+      const t = i / segCount;
+      const baseX = x0 + (x1 - x0) * t;
+      const baseY = y0 + (y1 - y0) * t;
+      const jitter = (1 - Math.abs(t - 0.5) * 2) * 40; // max jitter at midpoint
+      const x = baseX + (Math.random() - 0.5) * jitter;
+      const y = baseY + (Math.random() - 0.5) * jitter;
+      segments.push({ x, y });
+
+      // Fork branches at ~30% chance per midpoint segment
+      if (i > 2 && i < segCount - 2 && Math.random() < 0.3) {
+        const branchSegs: { x: number; y: number }[] = [{ x, y }];
+        let bx = x, by = y;
+        const bLen = 3 + Math.floor(Math.random() * 4);
+        const bAngle = Math.atan2(y1 - y0, x1 - x0) + (Math.random() - 0.5) * Math.PI * 0.8;
+        for (let j = 0; j < bLen; j++) {
+          bx += Math.cos(bAngle) * (15 + Math.random() * 10) + (Math.random() - 0.5) * 8;
+          by += Math.sin(bAngle) * (15 + Math.random() * 10) + (Math.random() - 0.5) * 8;
+          branchSegs.push({ x: bx, y: by });
+        }
+        branches.push(branchSegs);
+      }
+    }
+
+    return {
+      x0, y0, x1, y1,
+      life: 1,
+      decay: 0.03 + Math.random() * 0.04,
+      segments,
+      branches,
+      width: 1.5 + Math.random() * 2,
+      hue: 200 + Math.random() * 40,
+    };
+  }
+
   private _spawnShootingStar(W: number, H: number): ShootingStar {
     // Pick a random edge to start from (top or right side for natural diagonal)
     const fromTop = Math.random() > 0.4;
@@ -333,6 +446,11 @@ export class ParticleBackground {
       if (s.showNebula) this._drawNebulaClouds(W, H);
       if (s.showGlitter) this._drawGlitter(W, H);
       if (s.showShootingStars) this._drawShootingStars(W, H);
+    } else if (this._theme === 'electric') {
+      this._frameCount++;
+      this._drawElectricBackground(W, H);
+      if (s.showLightning) this._drawLightning(W, H);
+      this._drawPlasmaSparks(W, H);
     }
 
     // Base layers (shared across all themes)
@@ -719,6 +837,164 @@ export class ParticleBackground {
     ctx.lineCap = 'butt'; // reset
   }
 
+  // ── Electric Effects ────────────────────────────────────────────────────────
+
+  private _drawElectricBackground(W: number, H: number): void {
+    const { ctx } = this;
+    // Dark blue ambient glow from center
+    const cx = W / 2;
+    const cy = H / 2;
+    const maxR = Math.max(W, H) * 0.7;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR);
+    grad.addColorStop(0, 'rgba(20, 40, 100, 0.04)');
+    grad.addColorStop(0.4, 'rgba(10, 20, 60, 0.025)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Pulsing electric aura
+    const pulse = Math.sin(this._frameCount * 0.03) * 0.5 + 0.5;
+    const g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR * 0.5);
+    g2.addColorStop(0, `rgba(60, 140, 255, ${0.02 * pulse})`);
+    g2.addColorStop(0.5, `rgba(30, 80, 200, ${0.01 * pulse})`);
+    g2.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  private _drawLightning(W: number, H: number): void {
+    const { ctx } = this;
+    const spd = this._settings.speed;
+
+    // Spawn new bolts on timer
+    this._lightningTimer -= spd;
+    if (this._lightningTimer <= 0 && this.lightningBolts.length < LIGHTNING_MAX) {
+      this.lightningBolts.push(this._spawnLightning(W, H));
+      this._lightningTimer = 40 + Math.random() * 80;
+    }
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    for (let i = this.lightningBolts.length - 1; i >= 0; i--) {
+      const bolt = this.lightningBolts[i];
+      bolt.life -= bolt.decay * spd;
+
+      if (bolt.life <= 0) {
+        this.lightningBolts.splice(i, 1);
+        continue;
+      }
+
+      // Lightning flickers — alpha oscillates rapidly during life
+      const flicker = bolt.life * (0.5 + 0.5 * Math.sin(this._frameCount * 0.8 + i * 5));
+      const alpha = flicker;
+
+      // Draw main bolt
+      this._drawBoltPath(bolt.segments, bolt.width, bolt.hue, alpha);
+
+      // Draw branches (thinner)
+      for (const branch of bolt.branches) {
+        this._drawBoltPath(branch, bolt.width * 0.5, bolt.hue + 10, alpha * 0.6);
+      }
+
+      // Impact glow at both ends
+      for (const pt of [bolt.segments[0], bolt.segments[bolt.segments.length - 1]]) {
+        const glow = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, 30);
+        glow.addColorStop(0, `hsla(${bolt.hue}, 90%, 80%, ${alpha * 0.4})`);
+        glow.addColorStop(0.4, `hsla(${bolt.hue}, 80%, 60%, ${alpha * 0.1})`);
+        glow.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 30, 0, Math.PI * 2);
+        ctx.fillStyle = glow;
+        ctx.fill();
+      }
+    }
+
+    ctx.lineCap = 'butt';
+    ctx.lineJoin = 'miter';
+    ctx.restore();
+  }
+
+  private _drawBoltPath(
+    segments: { x: number; y: number }[],
+    width: number,
+    hue: number,
+    alpha: number,
+  ): void {
+    const { ctx } = this;
+    if (segments.length < 2) return;
+
+    // Outer glow (wide, dim)
+    ctx.beginPath();
+    ctx.moveTo(segments[0].x, segments[0].y);
+    for (let j = 1; j < segments.length; j++) {
+      ctx.lineTo(segments[j].x, segments[j].y);
+    }
+    ctx.strokeStyle = `hsla(${hue}, 80%, 70%, ${alpha * 0.15})`;
+    ctx.lineWidth = width * 6;
+    ctx.stroke();
+
+    // Mid glow
+    ctx.beginPath();
+    ctx.moveTo(segments[0].x, segments[0].y);
+    for (let j = 1; j < segments.length; j++) {
+      ctx.lineTo(segments[j].x, segments[j].y);
+    }
+    ctx.strokeStyle = `hsla(${hue}, 85%, 75%, ${alpha * 0.4})`;
+    ctx.lineWidth = width * 2.5;
+    ctx.stroke();
+
+    // Bright core
+    ctx.beginPath();
+    ctx.moveTo(segments[0].x, segments[0].y);
+    for (let j = 1; j < segments.length; j++) {
+      ctx.lineTo(segments[j].x, segments[j].y);
+    }
+    ctx.strokeStyle = `hsla(0, 0%, 100%, ${alpha * 0.8})`;
+    ctx.lineWidth = width * 0.8;
+    ctx.stroke();
+  }
+
+  private _drawPlasmaSparks(W: number, H: number): void {
+    const { ctx } = this;
+    const spd = this._settings.speed;
+
+    this.plasmaSparks.forEach((p, idx) => {
+      p.x += p.vx * spd;
+      p.y += p.vy * spd;
+      p.life -= p.decay * spd;
+
+      // Slight drift
+      p.vx += (Math.random() - 0.5) * 0.1;
+      p.vy += (Math.random() - 0.5) * 0.1;
+
+      if (p.life <= 0 || p.x < -20 || p.x > W + 20 || p.y < -20 || p.y > H + 20) {
+        this.plasmaSparks[idx] = this._spawnPlasmaSpark(W, H);
+        return;
+      }
+
+      const alpha = p.life * 0.6;
+
+      // Glow halo
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 5);
+      grad.addColorStop(0, `hsla(${p.hue}, 90%, 75%, ${alpha * 0.5})`);
+      grad.addColorStop(0.3, `hsla(${p.hue}, 80%, 55%, ${alpha * 0.15})`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * 5, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Core spark
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${p.hue}, 100%, 85%, ${alpha})`;
+      ctx.fill();
+    });
+  }
+
   // ── Public API ───────────────────────────────────────────────────────────────
 
   /**
@@ -813,6 +1089,10 @@ export class ParticleBackground {
     this.glitters = Array.from({ length: Math.max(glitterCount, 1) }, () => this._spawnGlitter(W, H));
 
     this.shootingStars = [];
+
+    const plasmaCount = Math.round(PLASMA_SPARK_COUNT * d);
+    this.plasmaSparks = Array.from({ length: Math.max(plasmaCount, 1) }, () => this._spawnPlasmaSpark(W, H));
+    this.lightningBolts = [];
   }
 
   /**
@@ -827,6 +1107,7 @@ export class ParticleBackground {
     this._buildSnowflakes(w, h);
     this._buildNebula(w, h);
     this._buildGlitter(w, h);
+    this._buildPlasma(w, h);
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -853,5 +1134,7 @@ export class ParticleBackground {
     this.nebulaClouds = [];
     this.glitters = [];
     this.shootingStars = [];
+    this.plasmaSparks = [];
+    this.lightningBolts = [];
   }
 }

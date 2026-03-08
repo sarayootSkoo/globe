@@ -7,5 +7,11 @@
 
 | ID | Time | T | Title | Read |
 |----|------|---|-------|------|
+| #9567 | 2:39 PM | ✅ | Globe Opacity Parameter Added to Animation Interface | ~575 |
+| #9536 | 2:24 PM | ✅ | Added default setting for lightning effects toggle | ~299 |
+| #9535 | " | 🔄 | Added showLightning field to EffectSettings interface | ~299 |
+| #9497 | 1:36 PM | 🟣 | Added glitter and shooting star effects for galaxy theme | ~520 |
+| #9490 | 1:32 PM | 🟣 | Galaxy Theme Nebula Clouds for Particle Background | ~549 |
+| #9482 | 1:25 PM | 🟣 | Added fire and winter theme support to 3D globe renderer | ~430 |
 | #9451 | 12:30 PM | 🔄 | Removed unnecessary TypeScript workaround from GlobeRenderer | ~232 |
 </claude-mem-context>

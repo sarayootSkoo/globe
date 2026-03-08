@@ -93,6 +93,25 @@
   --corner-color: var(--accent);
   --banner-bg: rgba(5,0,13,0.97);
 }
+[data-theme="electric"] {
+  --bg: #020810;
+  --panel-bg: rgba(4, 12, 30, 0.92);
+  --border: rgba(60, 140, 255, 0.22);
+  --border-hi: rgba(100, 180, 255, 0.55);
+  --accent: #3c8cff;
+  --text: #d0e4ff;
+  --text-dim: #4a6a90;
+  --font: 'Courier New', 'Consolas', monospace;
+  --green: #10b981;
+  --red: #ef4444;
+  --orange: #60a5fa;
+  --yellow: #93c5fd;
+  --link-opacity: 0.14;
+  --particle-color: 60, 140, 255;
+  --scanline-color: rgba(60,140,255,0.015);
+  --corner-color: var(--accent);
+  --banner-bg: rgba(2,8,16,0.97);
+}
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; height: 100vh; }
 

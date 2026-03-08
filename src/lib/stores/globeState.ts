@@ -78,3 +78,10 @@ export const zoomLevel = writable<number>(55);
  * in the renderer.
  */
 export const lockedNode = writable<GraphNode | null>(null);
+
+/**
+ * Globe opacity multiplier (0.1–1.0).
+ * Scales the wireframe and dot sphere opacity to prevent blowout
+ * when combined with additive-blended effects like electric arcs.
+ */
+export const globeOpacity = writable<number>(1);
