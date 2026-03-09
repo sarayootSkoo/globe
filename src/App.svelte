@@ -45,6 +45,7 @@
   // Keyboard shortcuts
   import KeyboardShortcuts from './components/controls/KeyboardShortcuts.svelte';
 
+
   let loaded = $state(false);
   let wasdPopupVisible = $state(false);
   let wasdKeys = $state({ w: false, a: false, s: false, d: false, q: false, shift: false });

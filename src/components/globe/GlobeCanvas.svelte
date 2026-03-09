@@ -298,6 +298,7 @@
         document.dispatchEvent(new CustomEvent('kg:tour-toggled'));
       } else if (detail?.action === 'stop' || (detail?.action === 'toggle' && autoTour.active)) {
         autoTour.stop();
+        renderer?.resetPosition();
         document.dispatchEvent(new CustomEvent('kg:tour-toggled'));
       }
     };
@@ -315,6 +316,11 @@
     const unsubTourSpeed = globeStore.tourSpeed.subscribe(v => {
       // v is multiplier: 1 = 3s, 2 = 1.5s, 0.5 = 6s
       if (autoTour) autoTour.setPauseDuration(3 / Math.max(0.1, v));
+    });
+
+    // ── Tour random mode subscription ────────────────────────────────────
+    const unsubTourRandom = globeStore.tourRandom.subscribe(v => {
+      if (autoTour) autoTour.setRandom(v);
     });
 
     // ── Bloom post-processing subscription ──────────────────────────────────
@@ -436,6 +442,7 @@
       document.removeEventListener('kg:autotour', handleAutoTour);
       document.removeEventListener('kg:reset', handleReset);
       unsubTourSpeed();
+      unsubTourRandom();
       unsubBloom();
       unsubBloomParams();
       unsubBloomR();

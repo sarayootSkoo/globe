@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 /**
  * build-graph-data.mjs
- * Scans a directory of Markdown files and produces graph-data.json for the knowledge graph demo.
+ * Scans a directory of Markdown files and produces graph-data.json + updates graph-config.json.
  *
  * Usage:
  *   node scripts/build-graph-data.mjs [rootDir] [--out <outputFile>]
  *
  * Defaults:
- *   rootDir    = ../../  (the knowledge folder, relative to this script)
+ *   rootDir    = ../../docs  (the knowledge/docs folder, relative to this script)
  *   outputFile = public/graph-data.json
+ *
+ * Also updates graph-config.json next to the output file:
+ *   - Sets basePath to the scanned rootDir
+ *   - Syncs categories to match discovered data (preserves existing colors)
  */
 
 import fs from 'fs';
@@ -32,7 +36,7 @@ for (let i = 0; i < args.length; i++) {
 
 const ROOT_DIR = rootArg
   ? path.resolve(rootArg)
-  : path.resolve(__dirname, '../../');
+  : path.resolve(__dirname, '../../docs');
 
 const OUTPUT_FILE = outArg
   ? path.resolve(outArg)
@@ -201,3 +205,60 @@ fs.mkdirSync(path.dirname(OUTPUT_FILE), { recursive: true });
 fs.writeFileSync(OUTPUT_FILE, JSON.stringify(output, null, 2), 'utf8');
 
 console.log(`Done — ${cleanNodes.length} nodes, ${links.length} links → ${OUTPUT_FILE}`);
+
+// ── Sync graph-config.json ──────────────────────────────────────────────────
+const CONFIG_FILE = path.join(path.dirname(OUTPUT_FILE), 'graph-config.json');
+
+// Default colors for new categories
+const DEFAULT_COLORS = [
+  { color: '#00e5ff', glow: 'rgba(0,229,255,0.6)' },
+  { color: '#4d8aff', glow: 'rgba(77,138,255,0.5)' },
+  { color: '#00ff88', glow: 'rgba(0,255,136,0.5)' },
+  { color: '#ffcc00', glow: 'rgba(255,204,0,0.55)' },
+  { color: '#ff3dff', glow: 'rgba(255,61,255,0.55)' },
+  { color: '#ff6b2b', glow: 'rgba(255,107,43,0.55)' },
+  { color: '#b44dff', glow: 'rgba(180,77,255,0.5)' },
+  { color: '#ff03cd', glow: 'rgba(187,136,174,0.4)' },
+];
+
+let config = { projectName: 'Knowledge Graph', dataFile: './graph-data.json', basePath: '', categories: {} };
+try {
+  config = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+} catch {
+  // start fresh
+}
+
+// Update basePath
+config.basePath = ROOT_DIR;
+
+// Sync categories: keep existing colors, add new ones, remove stale ones
+const discoveredCats = [...catSet];
+const oldCats = config.categories || {};
+const newCats = {};
+let colorIdx = 0;
+
+for (const cat of discoveredCats) {
+  if (oldCats[cat]) {
+    newCats[cat] = oldCats[cat];
+  } else {
+    const fallback = DEFAULT_COLORS[colorIdx % DEFAULT_COLORS.length];
+    colorIdx++;
+    newCats[cat] = {
+      label: cat.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+      color: fallback.color,
+      glow: fallback.glow,
+    };
+    console.log(`  + New category: "${cat}" (${newCats[cat].label})`);
+  }
+}
+
+// Report removed categories
+for (const cat of Object.keys(oldCats)) {
+  if (!catSet.has(cat)) {
+    console.log(`  - Removed category: "${cat}"`);
+  }
+}
+
+config.categories = newCats;
+fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+console.log(`Config updated → ${CONFIG_FILE}`);

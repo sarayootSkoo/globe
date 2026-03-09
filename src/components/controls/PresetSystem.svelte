@@ -1,9 +1,16 @@
 <script lang="ts">
-  import { presets, activePresetName, applyPreset, savePreset, deletePreset, initPresets, resetToDefaults, disableAllEffects, exportPresetsAsFile, importPresetsFromFile } from '../../lib/stores/presetState';
+  import { presets, activePresetName, applyPreset, savePreset, deletePreset, initPresets, resetToDefaults, disableAllEffects, exportPresetsAsFile, importPresetsFromFile, computeEnergyScore } from '../../lib/stores/presetState';
   import type { Preset } from '../../lib/stores/presetState';
 
   let presetList = $state<Preset[]>([]);
   let activeName = $state<string | null>(null);
+
+  // Sorted by energy score ascending (lowest energy first)
+  let sortedPresets = $derived(
+    [...presetList]
+      .map(p => ({ preset: p, energy: computeEnergyScore(p) }))
+      .sort((a, b) => a.energy - b.energy)
+  );
   let showSaveInput = $state(false);
   let newPresetName = $state('');
   let importStatus = $state('');
@@ -53,6 +60,37 @@
 
   const builtinNames = ['Chill', 'Low Energy', 'Fireworks', 'MAX'];
 
+  // ── Energy dots visual ──────────────────────────────────────────────────
+  const MAX_DOTS = 5;
+
+  /** Map energy 0–1 → dot count 1–5 (non-linear breakpoints for visual clarity) */
+  function energyDotCount(energy: number): number {
+    if (energy < 0.10) return 1;
+    if (energy < 0.25) return 2;
+    if (energy < 0.45) return 3;
+    if (energy < 0.70) return 4;
+    return 5;
+  }
+
+  /** Energy level color: green → yellow → orange → red */
+  function energyColor(energy: number): string {
+    if (energy < 0.25) return '#22ff88';   // green — minimal
+    if (energy < 0.45) return '#88ee44';   // lime — low
+    if (energy < 0.60) return '#ffcc00';   // yellow — medium
+    if (energy < 0.80) return '#ff8833';   // orange — high
+    return '#ff3333';                       // red — max
+  }
+
+  /** Readable energy label */
+  function energyLabel(energy: number): string {
+    const pct = Math.round(energy * 100);
+    if (energy < 0.25) return `~${pct}% · Minimal`;
+    if (energy < 0.45) return `~${pct}% · Low`;
+    if (energy < 0.60) return `~${pct}% · Medium`;
+    if (energy < 0.80) return `~${pct}% · High`;
+    return `~${pct}% · Max`;
+  }
+
   // ── Preset thumbnail color mapping ────────────────────────────────────────
   const THEME_COLORS: Record<string, string> = {
     dark:     '#4488cc',
@@ -82,15 +120,22 @@
 <div class="preset-panel">
   <div class="preset-title">Presets</div>
   <div class="preset-grid">
-    {#each presetList as preset}
+    {#each sortedPresets as { preset, energy }}
+      {@const dots = energyDotCount(energy)}
+      {@const color = energyColor(energy)}
       <button
         class="preset-btn"
         class:active={activeName === preset.name}
         onclick={() => handleApply(preset)}
-        title="Apply {preset.name} preset"
+        title="{preset.name} — Energy: {energyLabel(energy)}"
       >
         <span class="preset-thumb" style={presetThumbStyle(preset)}></span>
-        {preset.name}
+        <span class="preset-name">{preset.name}</span>
+        <span class="energy-dots" style="--energy-color: {color}">
+          {#each Array(MAX_DOTS) as _, i}
+            <span class="dot" class:filled={i < dots} class:empty={i >= dots}>●</span>
+          {/each}
+        </span>
         {#if !builtinNames.includes(preset.name)}
           <span
             class="preset-overwrite"
@@ -183,6 +228,24 @@
     height: 3px;
     border-radius: 3px 3px 0 0;
     transition: opacity 0.3s;
+  }
+  .preset-name {
+    display: block;
+    font-size: 10px;
+    line-height: 1.3;
+  }
+  .energy-dots {
+    display: block;
+    font-size: 7px;
+    letter-spacing: 1px;
+    margin-top: 2px;
+    line-height: 1;
+  }
+  .energy-dots .dot.filled {
+    color: var(--energy-color, #88ee44);
+  }
+  .energy-dots .dot.empty {
+    color: rgba(255, 255, 255, 0.12);
   }
   .preset-btn:hover {
     background: rgba(0, 212, 255, 0.1);

@@ -98,3 +98,6 @@ export const dotBrightness = writable<number>(1);
  * 1 = 3s pause (default), 2 = 1.5s, 0.5 = 6s.
  */
 export const tourSpeed = writable<number>(1);
+
+/** When true, tour jumps to a random node instead of sequential */
+export const tourRandom = writable<boolean>(false);

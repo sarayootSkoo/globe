@@ -5,6 +5,7 @@
   import type { Theme } from '../../lib/stores/appState';
   import WasdPopup from '../wasd/WasdPopup.svelte';
   import PresetSystem from './PresetSystem.svelte';
+  import EnergyBar from './EnergyBar.svelte';
   import ScreenshotBtn from './ScreenshotBtn.svelte';
   import { audioEnabled, audioBass, audioMid, audioHigh, audioSensitivity, toggleAudio } from '../../lib/stores/audioReactive';
 
@@ -284,20 +285,39 @@
 
   // ── Auto tour ───────────────────────────────────────────────────────────────
   let tourActive = $state(false);
+  let tourToggleFromBtn = false; // guard against double-toggle
 
   function toggleAutoTour(): void {
     tourActive = !tourActive;
+    tourToggleFromBtn = true;
     document.dispatchEvent(new CustomEvent('kg:autotour', {
       detail: { action: tourActive ? 'start' : 'stop' },
     }));
   }
 
-  // Sync tour active state with keyboard shortcut toggles
+  // Sync tour active state with keyboard shortcut toggles (skip if triggered by our own button)
   $effect(() => {
-    const handler = () => { tourActive = !tourActive; };
+    const handler = () => {
+      if (tourToggleFromBtn) {
+        tourToggleFromBtn = false;
+        return;
+      }
+      tourActive = !tourActive;
+    };
     document.addEventListener('kg:tour-toggled', handler);
     return () => document.removeEventListener('kg:tour-toggled', handler);
   });
+
+  // ── Tour random mode ────────────────────────────────────────────────────────
+  let tourRandomMode = $state(false);
+  $effect(() => {
+    const unsub = globeStore.tourRandom.subscribe(v => { tourRandomMode = v; });
+    return unsub;
+  });
+  function toggleTourRandom(): void {
+    tourRandomMode = !tourRandomMode;
+    globeStore.tourRandom.set(tourRandomMode);
+  }
 
   // ── Theme effect handlers ──────────────────────────────────────────────────
   let fxDensityLabel = $derived(fxDensityVal + '%');
@@ -675,6 +695,21 @@
       title="Auto tour speed (10%=slow, 500%=fast)"
       oninput={handleTourSpeed}
     />
+  </div>
+
+  <!-- Tour Random -->
+  <div class="globe-ctrl-row">
+    <span class="globe-ctrl-label">Random Jump</span>
+    <div
+      class="globe-toggle"
+      class:on={tourRandomMode}
+      title="Jump to random nodes instead of sequential"
+      onclick={toggleTourRandom}
+      role="switch"
+      aria-checked={tourRandomMode}
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && toggleTourRandom()}
+    ></div>
   </div>
 
   <div class="divider"></div>
@@ -1122,6 +1157,7 @@
   {/if}
 
   <div class="divider"></div>
+  <EnergyBar />
   <PresetSystem />
 </div>
 

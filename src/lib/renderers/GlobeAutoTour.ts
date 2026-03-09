@@ -18,6 +18,7 @@ export class GlobeAutoTour {
   private _active = false;
   private _timer = 0;
   private pauseDuration = 3; // seconds to pause at each node
+  private _random = false;
   private callbacks: TourCallbacks;
 
   constructor(callbacks: TourCallbacks) {
@@ -54,11 +55,19 @@ export class GlobeAutoTour {
 
     if (this._timer >= this.pauseDuration) {
       this._timer = 0;
-      this.currentIndex++;
 
-      if (this.currentIndex >= this.nodes.length) {
-        // Loop back to start
-        this.currentIndex = 0;
+      if (this._random && this.nodes.length > 1) {
+        // Pick a random index different from current
+        let next: number;
+        do {
+          next = Math.floor(Math.random() * this.nodes.length);
+        } while (next === this.currentIndex);
+        this.currentIndex = next;
+      } else {
+        this.currentIndex++;
+        if (this.currentIndex >= this.nodes.length) {
+          this.currentIndex = 0;
+        }
       }
 
       this._visitCurrent();
@@ -68,6 +77,11 @@ export class GlobeAutoTour {
   /** Set pause duration between nodes */
   setPauseDuration(seconds: number): void {
     this.pauseDuration = Math.max(1, seconds);
+  }
+
+  /** Enable or disable random node jumping */
+  setRandom(enabled: boolean): void {
+    this._random = enabled;
   }
 
   private _visitCurrent(): void {

@@ -102,6 +102,42 @@ const BUILTIN_PRESETS: Preset[] = [
   },
 ];
 
+// ── Energy score calculation ──────────────────────────────────────────────
+// Weights: density & speed are the biggest GPU/CPU consumers, then booleans (each enabled effect),
+// then glow/bloom/fireworks/blackhole which add extra draw passes.
+const ENERGY_BOOL_KEYS = [
+  'fx.nebula','fx.glitter','fx.shootStars','fx.embers','fx.snowflakes',
+  'fx.lightning','fx.elecArcs','fx.plasmaAura','fx.sparkBurst','fx.bgMesh',
+  'fx.border','fx.bloom','fx.bhEnabled','fx.fwEnabled',
+];
+
+/** Compute a 0–1 energy score for a preset (0 = idle, 1 = max power) */
+export function computeEnergyScore(preset: Preset): number {
+  const s = preset.settings;
+  // Use defaults for missing keys
+  const density = (s['fx.density'] as number) ?? DEFAULT_VALUES['fx.density'];
+  const speed   = (s['fx.speed']   as number) ?? DEFAULT_VALUES['fx.speed'];
+  const glow    = (s['app.glow']   as number) ?? DEFAULT_VALUES['app.glow'];
+
+  // Normalize: density 0-5→0-1, speed 0-3→0-1, glow already 0-1
+  const nDensity = Math.min(density / 5, 1);
+  const nSpeed   = Math.min(speed / 3, 1);
+  const nGlow    = Math.min(glow, 1);
+
+  // Count enabled boolean effects (each preset may only define a subset)
+  let enabledCount = 0;
+  let totalBools = 0;
+  for (const key of ENERGY_BOOL_KEYS) {
+    const val = s[key] ?? DEFAULT_VALUES[key];
+    totalBools++;
+    if (val) enabledCount++;
+  }
+  const nBools = totalBools > 0 ? enabledCount / totalBools : 0;
+
+  // Weighted: density 30%, speed 25%, bools 25%, glow 20%
+  return nDensity * 0.30 + nSpeed * 0.25 + nBools * 0.25 + nGlow * 0.20;
+}
+
 /** Map of store key → writable store reference + type */
 const STORE_MAP: Record<string, { store: any; type: 'num' | 'bool' | 'string' }> = {
   'app.theme': { store: theme, type: 'string' },
