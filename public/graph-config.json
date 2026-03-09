@@ -1,6 +1,27 @@
 {
   "projectName": "Knowledge Graph",
   "dataFile": "./graph-data.json",
-  "basePath": "/Users/grammer/Documents/git-central/knowledge/project/docs",
-  "categories": {}
+  "basePath": "/Users/grammer/Documents/git-central/knowledge/docs",
+  "categories": {
+    "core": {
+      "label": "Core Docs",
+      "color": "#00e5ff",
+      "glow": "rgba(0,229,255,0.6)"
+    },
+    "oms-order": {
+      "label": "OMS Order",
+      "color": "#4d8aff",
+      "glow": "rgba(77,138,255,0.5)"
+    },
+    "oms-webapp": {
+      "label": "OMS Webapp",
+      "color": "#00ff88",
+      "glow": "rgba(0,255,136,0.5)"
+    },
+    "oms-help": {
+      "label": "Webapp Help",
+      "color": "#ffcc00",
+      "glow": "rgba(255,204,0,0.55)"
+    }
+  }
 }

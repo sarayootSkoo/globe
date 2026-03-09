@@ -36,7 +36,7 @@ for (let i = 0; i < args.length; i++) {
 
 const ROOT_DIR = rootArg
   ? path.resolve(rootArg)
-  : path.resolve(__dirname, '../../docs');
+  : path.resolve(__dirname, '../../../docs');
 
 const OUTPUT_FILE = outArg
   ? path.resolve(outArg)
