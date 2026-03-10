@@ -12,11 +12,13 @@
   import { GlobeAutoTour } from '../../lib/renderers/GlobeAutoTour';
   import { GlobeFireworks } from '../../lib/renderers/GlobeFireworks';
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
-  import { glowLevel, selectedNodeId, theme, activeCats } from '../../lib/stores/appState';
+  import { glowLevel, selectedNodeId, theme, activeCats, currentMode } from '../../lib/stores/appState';
   import * as fx from '../../lib/stores/themeEffects';
   import { searchMatched } from '../../lib/stores/searchState';
+  import { impactNodeId, impactHopMap } from '../../lib/stores/impactState';
   import * as globeStore from '../../lib/stores/globeState';
   import { showPreview } from '../../lib/stores/previewState';
+  import { showStatusBadges } from '../../lib/stores/statusState';
   import type { GraphNode, WASDKeys } from '../../lib/types';
 
   // ── Props ──────────────────────────────────────────────────────────────────
@@ -160,6 +162,41 @@
       } else {
         renderer.clearSearch();
         if (wasd) wasd.isSearchActive = () => false;
+      }
+    });
+
+    // ── React to impact mode changes ────────────────────────────────────────
+    const unsubImpact = impactHopMap.subscribe(hopMap => {
+      if (!renderer) return;
+      const mode = get(currentMode);
+      const nid  = get(impactNodeId);
+      if (mode === 'impact' && nid && hopMap.size > 0) {
+        renderer.highlightImpact(hopMap);
+      } else if (mode !== 'impact') {
+        renderer.clearImpact();
+      }
+    });
+
+    const unsubImpactMode = currentMode.subscribe(mode => {
+      if (!renderer) return;
+      if (mode !== 'impact') {
+        renderer.clearImpact();
+      } else {
+        // Re-apply if we just entered impact mode
+        const hopMap = get(impactHopMap);
+        if (hopMap.size > 0) renderer.highlightImpact(hopMap);
+      }
+    });
+
+    // ── React to status badge toggle ─────────────────────────────────────────
+    const unsubStatusBadges = showStatusBadges.subscribe(visible => {
+      if (!renderer) return;
+      if (visible) {
+        const nodes = get(graphNodes);
+        renderer.updateStatusBadges(nodes);
+        renderer.showStatusBadges(true);
+      } else {
+        renderer.clearStatusBadges();
       }
     });
 
@@ -413,6 +450,9 @@
       unsubNodes();
       unsubLinks();
       unsubSearch();
+      unsubImpact();
+      unsubImpactMode();
+      unsubStatusBadges();
       unsubGlow();
       unsubTheme();
       unsubAutoRotate();

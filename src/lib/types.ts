@@ -7,6 +7,7 @@ export interface GraphNode {
   file?: string;
   refs?: number;
   preview?: string;
+  status?: 'done' | 'in-progress' | 'planned';
   // D3 simulation adds these
   x?: number;
   y?: number;
@@ -30,6 +31,10 @@ export interface GraphLink {
   source: string | GraphNode;
   target: string | GraphNode;
   label?: string;
+  /** True when the source and target belong to different categories. */
+  crossRepo?: boolean;
+  /** Directional hint: backend→frontend = forward, frontend→backend = backward, same-level = bidirectional. */
+  direction?: 'forward' | 'backward' | 'bidirectional';
 }
 
 export interface Category {

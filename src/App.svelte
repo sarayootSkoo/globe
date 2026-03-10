@@ -25,6 +25,7 @@
   import StatsPanel from './components/panels/StatsPanel.svelte';
   import DetailPanel from './components/panels/DetailPanel.svelte';
   import PathPanel from './components/panels/PathPanel.svelte';
+  import ImpactPanel from './components/panels/ImpactPanel.svelte';
 
   // Search
   import SearchBox from './components/search/SearchBox.svelte';
@@ -112,6 +113,7 @@
   <StatsPanel />
   <DetailPanel />
   <PathPanel />
+  <ImpactPanel />
 
   <!-- Search -->
   <SearchBox />

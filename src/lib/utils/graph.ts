@@ -86,3 +86,45 @@ export function truncLabel(s: string): string {
   if (s.length > 28) return s.substring(0, 26) + '..';
   return s;
 }
+
+/**
+ * Returns a map of nodeId → hop distance for all nodes reachable within
+ * `maxHops` hops from `nodeId` (undirected).
+ *
+ * The source node itself is excluded from the result.
+ * Reuses `getConnected` for each hop level.
+ */
+export function getConnectedNHop(
+  nodeId: string,
+  links: GraphLink[],
+  maxHops: number,
+): Map<string, number> {
+  const result = new Map<string, number>();
+  const visited = new Set<string>([nodeId]);
+
+  let frontier: Set<string> = getConnected(nodeId, links);
+  frontier.forEach(id => {
+    if (!visited.has(id)) {
+      result.set(id, 1);
+      visited.add(id);
+    }
+  });
+
+  for (let hop = 2; hop <= maxHops; hop++) {
+    const nextFrontier = new Set<string>();
+    frontier.forEach(fId => {
+      const neighbors = getConnected(fId, links);
+      neighbors.forEach(nId => {
+        if (!visited.has(nId)) {
+          nextFrontier.add(nId);
+          result.set(nId, hop);
+          visited.add(nId);
+        }
+      });
+    });
+    frontier = nextFrontier;
+    if (frontier.size === 0) break;
+  }
+
+  return result;
+}

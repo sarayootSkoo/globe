@@ -81,11 +81,19 @@ export class GlobeRenderer {
   // ── Search state ───────────────────────────────────────────────────────────
   searchMatched: Set<string> | null = null;
 
+  // ── Impact state ────────────────────────────────────────────────────────────
+  /** Active impact hop map: nodeId → hop distance. null = no impact active. */
+  private _impactMap: Map<string, number> | null = null;
+
   // ── Fly-to animation ───────────────────────────────────────────────────────
   _flyAnimId: number | null = null;
 
   // ── Heatmap rings ──────────────────────────────────────────────────────────
   _heatmapRings: THREE.Line[] = [];
+
+  // ── Status badges ──────────────────────────────────────────────────────────
+  private _statusBadgeGroup: THREE.Group = new THREE.Group();
+  private _statusBadgesVisible: boolean = false;
 
   // ── Cached textures ────────────────────────────────────────────────────────
   _dotTexture: THREE.CanvasTexture | null = null;
@@ -172,6 +180,10 @@ export class GlobeRenderer {
     // ── Static globe geometry ─────────────────────────────────────────────────
     this._buildDotSphere();
     this._buildWireframe();
+
+    // ── Status badge group (added to scene but hidden until enabled) ──────────
+    this._statusBadgeGroup.visible = false;
+    this.scene.add(this._statusBadgeGroup);
 
     // ── Raycaster + mouse ─────────────────────────────────────────────────────
     this.raycaster = new THREE.Raycaster();
@@ -1000,6 +1012,197 @@ export class GlobeRenderer {
   }
 
   // ---------------------------------------------------------------------------
+  // Impact highlighting
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Highlights nodes by impact hop distance.
+   * - 1-hop nodes: full category colour, full brightness.
+   * - 2-hop nodes: category colour at ~0.6 opacity.
+   * - Unaffected nodes: dimmed to ~0.15 opacity (gray).
+   * - Links between any two affected nodes are brightened; all others dimmed.
+   *
+   * Pass the map returned by `getConnectedNHop()`.
+   */
+  highlightImpact(affectedMap: Map<string, number>): void {
+    if (!this.nodeMeshes.length) return;
+
+    this._impactMap = affectedMap;
+
+    const GRAY = 0x3a3a3a;
+
+    this.nodeMeshes.forEach(({ data, mat, glowMat, glowMesh, mesh, baseRadius }) => {
+      const hop = affectedMap.get(data.id);
+      const br = (baseRadius || 6) * 2;
+
+      if (hop === 1) {
+        // Direct (1-hop): full brightness
+        const cat = CATEGORIES[data.cat] || CATEGORIES['meta'];
+        const colorHex = parseColorToHex(cat.color);
+        mat.color.setHex(colorHex);
+        mat.opacity = 1;
+        glowMat.color.setHex(colorHex);
+        glowMat.opacity = 0.2;
+        glowMesh.scale.setScalar(1.3);
+        mesh.scale.setScalar(br * 1.1);
+      } else if (hop === 2) {
+        // Indirect (2-hop): medium brightness
+        const cat = CATEGORIES[data.cat] || CATEGORIES['meta'];
+        const colorHex = parseColorToHex(cat.color);
+        mat.color.setHex(colorHex);
+        mat.opacity = 0.6;
+        glowMat.color.setHex(colorHex);
+        glowMat.opacity = 0.09;
+        glowMesh.scale.setScalar(1.0);
+        mesh.scale.setScalar(br);
+      } else {
+        // Unaffected: dim gray
+        mat.color.setHex(GRAY);
+        mat.opacity = 0.15;
+        glowMat.color.setHex(GRAY);
+        glowMat.opacity = 0.01;
+        glowMesh.scale.setScalar(0.3);
+        mesh.scale.setScalar(br * 0.7);
+      }
+    });
+
+    // Highlight links that connect two affected nodes; dim all others
+    this.linkLines.forEach(line => {
+      const l = line.userData['linkData'] as GraphLink | undefined;
+      if (!l) return;
+      const sid = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+      const tid = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+      const srcAffected = affectedMap.has(sid);
+      const tgtAffected = affectedMap.has(tid);
+      (line.material as THREE.LineBasicMaterial).opacity =
+        srcAffected && tgtAffected ? 0.45 : 0.01;
+    });
+  }
+
+  /**
+   * Removes impact highlighting and restores default node/link appearance.
+   */
+  clearImpact(): void {
+    this._impactMap = null;
+
+    const gl = this._glowLevel;
+
+    this.nodeMeshes.forEach(({ data, mat, glowMat, glowMesh, mesh, baseRadius }) => {
+      const cat = CATEGORIES[data.cat] || CATEGORIES['meta'];
+      const colorHex = parseColorToHex(cat.color);
+      mat.color.setHex(colorHex);
+      mat.opacity = 0.95;
+      glowMat.color.setHex(colorHex);
+      glowMat.opacity = 0.06 + 0.12 * gl;
+      glowMesh.scale.setScalar(1);
+      const br = (baseRadius || 6) * 2;
+      mesh.scale.setScalar(br);
+    });
+
+    this.linkLines.forEach(line => {
+      (line.material as THREE.LineBasicMaterial).opacity = 0.07;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Status badges
+  // ---------------------------------------------------------------------------
+
+  /** Status colour map. */
+  private static readonly _STATUS_COLORS: Record<string, number> = {
+    'done':        0x00ff88,
+    'in-progress': 0xffaa00,
+    'planned':     0x666666,
+  };
+
+  /** Creates a small solid circle texture for the badge dot. */
+  private _createBadgeTexture(size: number): THREE.CanvasTexture {
+    const c = document.createElement('canvas');
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext('2d')!;
+    const cx = size / 2;
+    ctx.clearRect(0, 0, size, size);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(cx, cx, cx * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+    const tex = new THREE.CanvasTexture(c);
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  /**
+   * Rebuilds all status badge sprites from the provided node array.
+   * Each node with a `status` field gets a small coloured dot offset
+   * slightly from the main node sprite.
+   */
+  updateStatusBadges(nodes: GraphNode[]): void {
+    // Remove existing badges
+    this._clearStatusBadgeGroup();
+
+    const tex = this._createBadgeTexture(64);
+
+    nodes.forEach(n => {
+      if (!n.status) return;
+
+      // Find the mesh entry to get the 3D position
+      const entry = this.nodeMeshes.find(e => e.data.id === n.id);
+      if (!entry) return;
+
+      const color = GlobeRenderer._STATUS_COLORS[n.status] ?? 0x888888;
+      const mat = new THREE.SpriteMaterial({
+        map: tex,
+        color,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        sizeAttenuation: true,
+        blending: THREE.AdditiveBlending,
+      });
+
+      const badge = new THREE.Sprite(mat);
+
+      // Offset badge slightly away from the globe surface along the node direction
+      const dir = entry.mesh.position.clone().normalize();
+      const offsetScale = (entry.baseRadius || 6) * 2 * 0.8; // slightly smaller than node
+      badge.position.copy(entry.mesh.position).addScaledVector(dir, offsetScale * 0.5);
+      // Also offset sideways so it's visible next to the node
+      const right = new THREE.Vector3(0, 1, 0).cross(dir).normalize();
+      badge.position.addScaledVector(right, offsetScale * 0.55);
+      badge.scale.setScalar(offsetScale * 0.55);
+      badge.userData['_statusBadge'] = true;
+
+      this._statusBadgeGroup.add(badge);
+    });
+
+    tex.dispose(); // each sprite holds its own reference via material; this is a shared instance so keep it
+    // Actually we need to NOT dispose — materials share it. Let GC handle it.
+  }
+
+  /** Show or hide all status badge sprites. */
+  showStatusBadges(visible: boolean): void {
+    this._statusBadgesVisible = visible;
+    this._statusBadgeGroup.visible = visible;
+  }
+
+  /** Remove all badge sprites from the group and dispose their materials. */
+  clearStatusBadges(): void {
+    this._clearStatusBadgeGroup();
+    this._statusBadgesVisible = false;
+    this._statusBadgeGroup.visible = false;
+  }
+
+  private _clearStatusBadgeGroup(): void {
+    const toRemove = [...this._statusBadgeGroup.children];
+    for (const obj of toRemove) {
+      this._statusBadgeGroup.remove(obj);
+      const sprite = obj as THREE.Sprite;
+      sprite.material.dispose();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Heatmap rings
   // ---------------------------------------------------------------------------
 
@@ -1392,6 +1595,10 @@ export class GlobeRenderer {
 
     // Heatmap rings
     this._removeHeatmapRings();
+
+    // Status badges
+    this._clearStatusBadgeGroup();
+    this.scene.remove(this._statusBadgeGroup);
 
     // Textures
     this._dotTexture?.dispose();

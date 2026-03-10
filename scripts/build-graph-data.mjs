@@ -45,6 +45,43 @@ const OUTPUT_FILE = outArg
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.next', 'build', '.svelte-kit', '.turbo', 'coverage']);
 const PREVIEW_CHARS = 500;
 
+// ── Status detection ──────────────────────────────────────────────────────────
+/**
+ * Returns 'done', 'in-progress', 'planned', or undefined (no status).
+ * Rules applied in priority order.
+ */
+function detectStatus(filePath, rootDir, content) {
+  const rel = path.relative(rootDir, filePath);
+  const parts = rel.split(path.sep);
+
+  // Any segment named 'old' or 'archive' → done
+  if (parts.some(p => p.toLowerCase() === 'old' || p.toLowerCase() === 'archive')) return 'done';
+
+  // Check directory names (look at all segments, not just first)
+  const dirParts = parts.slice(0, -1); // exclude filename
+
+  const hasDirNamed = (name) => dirParts.some(p => p.toLowerCase() === name);
+
+  // specs/ with done-status content → done; otherwise → in-progress
+  if (hasDirNamed('specs') || hasDirNamed('spec')) {
+    const donePattern = /^\s*[-*]\s*(?:status|สถานะ)\s*:\s*(?:done|complete|เสร็จ)/im;
+    if (donePattern.test(content)) return 'done';
+    return 'in-progress';
+  }
+
+  // tasks/ → in-progress
+  if (hasDirNamed('tasks') || hasDirNamed('task')) return 'in-progress';
+
+  // docs/ → no status (reference docs)
+  if (hasDirNamed('docs') || hasDirNamed('doc')) return undefined;
+
+  // discussion/ or discuss/ → planned
+  if (hasDirNamed('discussion') || hasDirNamed('discussions') || hasDirNamed('discuss')) return 'planned';
+
+  // Everything else → no status
+  return undefined;
+}
+
 // ── Category detection ────────────────────────────────────────────────────────
 function detectCategory(filePath, rootDir) {
   const rel = path.relative(rootDir, filePath);
@@ -150,7 +187,9 @@ for (const filePath of files) {
   const descMatch = content.match(/^(?!#)[^\n]{10,}/m);
   const desc = descMatch ? descMatch[0].slice(0, 80) : basename;
 
-  nodes.push({
+  const status = detectStatus(filePath, ROOT_DIR, content);
+
+  const nodeObj = {
     id,
     label,
     cat,
@@ -159,7 +198,10 @@ for (const filePath of files) {
     preview,
     _refs: extractRefs(content),
     _basename: basename,
-  });
+  };
+  if (status !== undefined) nodeObj.status = status;
+
+  nodes.push(nodeObj);
 
   // Track by basename for cross-ref resolution (last-writer wins for duplicates)
   idMap.set(basename.toLowerCase(), id);
@@ -169,6 +211,21 @@ for (const filePath of files) {
 const links = [];
 const linkSet = new Set();
 
+// Build a quick id→cat lookup (using the not-yet-cleaned nodes array)
+const idCatMap = new Map(nodes.map(n => [n.id, n.cat]));
+
+/**
+ * Determine link direction based on source and target categories.
+ * oms-order (backend) → oms-webapp (frontend) = forward
+ * oms-webapp → oms-order = backward
+ * all other cross-repo pairs = bidirectional
+ */
+function detectLinkDirection(srcCat, tgtCat) {
+  if (srcCat === 'oms-order' && tgtCat === 'oms-webapp') return 'forward';
+  if (srcCat === 'oms-webapp' && tgtCat === 'oms-order') return 'backward';
+  return 'bidirectional';
+}
+
 for (const node of nodes) {
   for (const refBasename of node._refs) {
     const targetId = idMap.get(refBasename.toLowerCase());
@@ -176,7 +233,15 @@ for (const node of nodes) {
       const key = [node.id, targetId].sort().join('||');
       if (!linkSet.has(key)) {
         linkSet.add(key);
-        links.push({ source: node.id, target: targetId });
+        const srcCat = idCatMap.get(node.id);
+        const tgtCat = idCatMap.get(targetId);
+        const crossRepo = srcCat !== tgtCat;
+        const link = { source: node.id, target: targetId };
+        if (crossRepo) {
+          link.crossRepo = true;
+          link.direction = detectLinkDirection(srcCat, tgtCat);
+        }
+        links.push(link);
       }
     }
   }
@@ -188,6 +253,16 @@ const cleanNodes = nodes.map(({ _refs, _basename, ...rest }) => rest);
 // Collect category list
 const catSet = new Set(cleanNodes.map(n => n.cat));
 
+// Compute status counts
+const statusCounts = { done: 0, 'in-progress': 0, planned: 0 };
+for (const n of cleanNodes) {
+  if (n.status === 'done') statusCounts.done++;
+  else if (n.status === 'in-progress') statusCounts['in-progress']++;
+  else if (n.status === 'planned') statusCounts.planned++;
+}
+
+const crossRepoCount = links.filter(l => l.crossRepo).length;
+
 const output = {
   generated: new Date().toISOString(),
   root: ROOT_DIR,
@@ -195,6 +270,8 @@ const output = {
     totalFiles: cleanNodes.length,
     totalLinks: links.length,
     categories: [...catSet],
+    statusCounts,
+    crossRepoCount,
   },
   nodes: cleanNodes,
   links,

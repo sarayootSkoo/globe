@@ -8,7 +8,9 @@
     "preview": "vite preview --port 4003",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "gen": "node scripts/build-graph-data.mjs",
-    "gen:dist": "node scripts/build-graph-data.mjs --out dist/graph-data.json"
+    "gen:dist": "node scripts/build-graph-data.mjs --out dist/graph-data.json",
+    "watch": "node scripts/watch-docs.mjs",
+    "dev:watch": "node scripts/watch-docs.mjs & vite --port 4002"
   },
   "dependencies": {
     "@secure-storage/common": "^1.0.8",

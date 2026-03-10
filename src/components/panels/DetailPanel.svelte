@@ -2,6 +2,7 @@
   import { selectedNodeId, currentMode } from '../../lib/stores/appState';
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
   import { showPreview } from '../../lib/stores/previewState';
+  import { impactNodeId } from '../../lib/stores/impactState';
   import { CATEGORIES } from '../../lib/constants';
   import { getConnected } from '../../lib/utils/graph';
   import type { GraphNode, GraphLink } from '../../lib/types';
@@ -35,6 +36,7 @@
 
   function startImpact(): void {
     if (!node) return;
+    impactNodeId.set(node.id);
     currentMode.set('impact');
   }
 
