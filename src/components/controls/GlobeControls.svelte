@@ -1762,4 +1762,24 @@
     box-shadow: 0 0 5px var(--yellow);
     cursor: pointer;
   }
+
+  /* Reset button — matches panel aesthetic */
+  .preset-reset-btn {
+    padding: 4px 14px;
+    background: rgba(0, 212, 255, 0.06);
+    border: 1px solid rgba(0, 212, 255, 0.25);
+    border-radius: 3px;
+    font-size: 9px;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: var(--font);
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+  }
+  .preset-reset-btn:hover {
+    border-color: var(--accent, #00d4ff);
+    color: var(--accent, #00d4ff);
+    background: rgba(0, 212, 255, 0.12);
+    box-shadow: 0 0 8px rgba(0, 212, 255, 0.15);
+  }
 </style>
