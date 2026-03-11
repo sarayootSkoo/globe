@@ -5,17 +5,21 @@
   import * as fx from '../../lib/stores/themeEffects';
   import { resetToDefaults } from '../../lib/stores/presetState';
 
-  const THEMES: Theme[] = ['dark', 'light', 'fire', 'winter', 'galaxy', 'electric', 'void', 'aurora', 'rain'];
+  const THEMES: Theme[] = ['dark', 'light', 'fire', 'winter', 'galaxy', 'electric', 'void', 'aurora', 'rain', 'polygon'];
 
   onMount(() => {
     function handleKey(e: KeyboardEvent): void {
       // Don't trigger when typing in inputs
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-      // 1-9: Switch themes
+      // 1-9: Switch themes[0..8], 0: Switch themes[9] (polygon)
       const num = parseInt(e.key, 10);
       if (num >= 1 && num <= 9) {
         theme.set(THEMES[num - 1]);
+        return;
+      }
+      if (e.key === '0') {
+        theme.set(THEMES[9]);
         return;
       }
 

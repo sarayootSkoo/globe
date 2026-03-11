@@ -62,6 +62,11 @@ export const fireworksColorful = writable<boolean>(true);    // random colorful 
 export const fireworksNoLimit = writable<boolean>(false);    // unlimited concurrent
 export const fireworksHue = writable<number>(0);             // 0 = auto, 1–360 = specific color
 
+/** Polygon planet effects — low-poly icosphere controls */
+export const polyPulseSpeed = writable<number>(1);     // 0–5: breathing pulse speed
+export const polyPlanetSize = writable<number>(1);     // 0.2–3: planet scale multiplier
+export const polyGradHue = writable<number>(0);        // 0–360: shift the gradient hue (0 = default teal→purple)
+
 /** Black hole effect — standalone animated effect available on any theme */
 export const blackholeEnabled = writable<boolean>(false);
 export const blackholeSize = writable<number>(1);      // 0–20: overall scale (0.01x–20x)

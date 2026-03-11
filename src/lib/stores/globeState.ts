@@ -101,3 +101,9 @@ export const tourSpeed = writable<number>(1);
 
 /** When true, tour jumps to a random node instead of sequential */
 export const tourRandom = writable<boolean>(false);
+
+/**
+ * Whether the polygon planet (low-poly icosphere with faceted coloring)
+ * is visible inside the globe. Auto-enabled on polygon theme.
+ */
+export const showPolygonPlanet = writable<boolean>(false);

@@ -1555,6 +1555,312 @@
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // POLYGON THEME — Rotating geometric shapes, crystal facets, teal/emerald
+  // ══════════════════════════════════════════════════════════════════════════
+
+  interface PolyShape {
+    sides: number;       // 3=triangle, 5=pentagon, 6=hexagon
+    edge: 0 | 1 | 2 | 3; // 0=top, 1=bottom, 2=left, 3=right
+    pos: number;         // 0..1 along edge
+    size: number;        // radius of shape
+    phase: number;       // rotation phase offset
+    rotSpeed: number;    // rotation speed
+    alpha: number;       // base opacity
+    depth: number;       // 0=outline only, 1=has facet fill
+  }
+
+  interface PolyFacet {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    size: number;
+    sides: number;
+    rot: number;
+    rotSpeed: number;
+    alpha: number;
+    life: number;        // 0..1
+    maxLife: number;
+  }
+
+  const POLY_SHAPE_COUNT = 28;
+  const POLY_FACET_MAX = 20;
+  let polyShapes: PolyShape[] = [];
+  let polyFacets: PolyFacet[] = [];
+
+  function buildPolygon(W: number, H: number): void {
+    polyShapes = [];
+    const sideOptions: Array<3 | 5 | 6> = [3, 5, 6, 6, 3, 6];
+    for (let i = 0; i < POLY_SHAPE_COUNT; i++) {
+      const edge = Math.floor(i / (POLY_SHAPE_COUNT / 4)) as 0 | 1 | 2 | 3;
+      polyShapes.push({
+        sides:     sideOptions[i % sideOptions.length],
+        edge,
+        pos:       (i % (POLY_SHAPE_COUNT / 4)) / (POLY_SHAPE_COUNT / 4) + Math.random() * 0.05,
+        size:      14 + Math.random() * 28,
+        phase:     Math.random() * Math.PI * 2,
+        rotSpeed:  (Math.random() > 0.5 ? 1 : -1) * (0.2 + Math.random() * 0.6),
+        alpha:     0.12 + Math.random() * 0.3,
+        depth:     Math.random() > 0.5 ? 1 : 0,
+      });
+    }
+    polyFacets = [];
+  }
+
+  /** Draw a regular polygon centered at (cx,cy) with given radius and rotation */
+  function drawRegularPoly(cx: number, cy: number, sides: number, r: number, rot: number): void {
+    if (!ctx) return;
+    ctx.beginPath();
+    for (let i = 0; i <= sides; i++) {
+      const a = rot + (i / sides) * Math.PI * 2;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  /** Compute the (cx,cy) of a shape based on its edge+pos, inset by its size */
+  function polyEdgePos(shape: PolyShape, W: number, H: number): [number, number] {
+    const inset = shape.size * 1.4;
+    switch (shape.edge) {
+      case 0: return [shape.pos * W, inset];                   // top
+      case 1: return [shape.pos * W, H - inset];               // bottom
+      case 2: return [inset, shape.pos * H];                   // left
+      case 3: return [W - inset, shape.pos * H];               // right
+    }
+  }
+
+  function drawPolygon(W: number, H: number, time: number, int: number): void {
+    if (!ctx) return;
+
+    // Palette: teal/cyan top → purple/magenta bottom, pink accents (from reference)
+    const edgeColors = [
+      [100, 220, 200], // top: teal
+      [140, 60, 200],  // bottom: purple
+      [200, 140, 255], // left: lavender
+      [80, 200, 180],  // right: teal-green
+    ];
+
+    // ── Layer 1: Soft gradient edge glow — multi-color ───────────────────
+    const glowD = 100 * int;
+    const edgeGlows = [
+      { x0: 0, y0: 0,        x1: 0,        y1: glowD,      fx: 0,        fy: 0,        fw: W,     fh: glowD  },
+      { x0: 0, y0: H,        x1: 0,        y1: H - glowD,  fx: 0,        fy: H-glowD,  fw: W,     fh: glowD  },
+      { x0: 0, y0: 0,        x1: glowD,    y1: 0,          fx: 0,        fy: 0,        fw: glowD, fh: H      },
+      { x0: W, y0: 0,        x1: W-glowD,  y1: 0,          fx: W-glowD,  fy: 0,        fw: glowD, fh: H      },
+    ];
+
+    for (let i = 0; i < edgeGlows.length; i++) {
+      const e = edgeGlows[i];
+      const [er, eg, eb] = edgeColors[i];
+      const pulse = 0.7 + 0.3 * Math.sin(time * 0.6 + i * 1.4);
+      const g = ctx.createLinearGradient(e.x0, e.y0, e.x1, e.y1);
+      g.addColorStop(0,   `rgba(${er},${eg},${eb},${0.15 * int * pulse})`);
+      g.addColorStop(0.4, `rgba(${er},${eg},${eb},${0.06 * int})`);
+      g.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(e.fx, e.fy, e.fw, e.fh);
+    }
+
+    // ── Layer 2: Wireframe tessellation lines ────────────────────────────
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const lineCount = 16;
+    for (let i = 0; i < lineCount; i++) {
+      const seed = i * 23.7;
+      const t = (seed * 0.041 + time * 0.015) % 1;
+      const perim = 2 * (W + H);
+      const pos = t * perim;
+      let lx0: number, ly0: number, lx1: number, ly1: number;
+
+      if (pos < W) {
+        lx0 = pos; ly0 = 0;
+        lx1 = Math.max(0, pos - W * 0.2); ly1 = H * 0.3;
+      } else if (pos < W + H) {
+        const p = pos - W;
+        lx0 = W; ly0 = p;
+        lx1 = W * 0.7; ly1 = Math.min(H, p + H * 0.2);
+      } else if (pos < 2 * W + H) {
+        const p = pos - W - H;
+        lx0 = W - p; ly0 = H;
+        lx1 = Math.min(W, W - p + W * 0.2); ly1 = H * 0.7;
+      } else {
+        const p = pos - 2 * W - H;
+        lx0 = 0; ly0 = H - p;
+        lx1 = W * 0.3; ly1 = Math.max(0, H - p - H * 0.2);
+      }
+
+      // Color varies by position: teal at top, purple at bottom, pink mix
+      const vertRatio = (ly0 + ly1) / (2 * H);
+      const lr = Math.round(100 + vertRatio * 120);
+      const lg2 = Math.round(220 - vertRatio * 160);
+      const lb = Math.round(200 + vertRatio * 55);
+      const alpha = (0.04 + 0.05 * Math.abs(Math.sin(seed * 0.3 + time * 0.4))) * int;
+      const shimmer = 0.7 + 0.3 * Math.sin(seed + time * 1.2);
+      const lg = ctx.createLinearGradient(lx0, ly0, lx1, ly1);
+      lg.addColorStop(0,   'rgba(0,0,0,0)');
+      lg.addColorStop(0.3, `rgba(${lr},${lg2},${lb},${alpha * shimmer})`);
+      lg.addColorStop(0.7, `rgba(255,255,255,${alpha * 0.3})`);
+      lg.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.strokeStyle = lg as unknown as string;
+      ctx.lineWidth = 0.8 + Math.sin(seed + time * 0.5) * 0.4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(lx0, ly0);
+      ctx.lineTo(lx1, ly1);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // ── Layer 3: Floating geometric shapes — teal/pink/white ────────────
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Color by vertical position + shape type
+    const shapeColors = [
+      [120, 255, 220],  // teal
+      [255, 160, 220],  // pink
+      [200, 180, 255],  // lavender
+      [255, 255, 255],  // white
+    ];
+
+    for (const shape of polyShapes) {
+      const rot = shape.phase + time * shape.rotSpeed;
+      const [cx, cy] = polyEdgePos(shape, W, H);
+      const pulse = 0.65 + 0.35 * Math.sin(time * 0.8 + shape.phase);
+      const alpha = shape.alpha * int * pulse;
+      const colorIdx = (shape.sides + Math.floor(shape.phase * 2)) % shapeColors.length;
+      const [sr, sg, sb] = shapeColors[colorIdx];
+
+      // Facet fill with color
+      if (shape.depth === 1) {
+        drawRegularPoly(cx, cy, shape.sides, shape.size * 0.55, rot + Math.PI / shape.sides);
+        ctx.fillStyle = `rgba(${sr},${sg},${sb},${alpha * 0.2})`;
+        ctx.fill();
+      }
+
+      // Outer outline in white/light color
+      drawRegularPoly(cx, cy, shape.sides, shape.size, rot);
+      ctx.strokeStyle = `rgba(${Math.min(255, sr + 60)},${Math.min(255, sg + 40)},${Math.min(255, sb + 40)},${alpha * 0.8})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Vertex dots — bright white sparkles
+      for (let v = 0; v < shape.sides; v++) {
+        const a = rot + (v / shape.sides) * Math.PI * 2;
+        const vx = cx + Math.cos(a) * shape.size;
+        const vy = cy + Math.sin(a) * shape.size;
+        const dotPulse = 0.4 + 0.6 * Math.abs(Math.sin(time * 1.4 + shape.phase + v));
+        ctx.beginPath();
+        ctx.arc(vx, vy, 1.8, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,255,255,${alpha * dotPulse * 1.2})`;
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+
+    // ── Layer 4: Drifting triangle/polygon shards — scattered particles ──
+    // Higher spawn rate for more visible scattered triangles (like reference)
+    if (polyFacets.length < POLY_FACET_MAX && Math.random() < 0.06) {
+      const sideArr = [3, 3, 3, 5, 6] as const;  // mostly triangles
+      const fx2 = Math.random() * W;
+      const fy2 = Math.random() * H;
+      polyFacets.push({
+        x: fx2, y: fy2,
+        vx: (Math.random() - 0.5) * 0.2,
+        vy: (Math.random() - 0.5) * 0.2,
+        size:     6 + Math.random() * 16,
+        sides:    sideArr[Math.floor(Math.random() * sideArr.length)],
+        rot:      Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() > 0.5 ? 1 : -1) * (0.2 + Math.random() * 0.6),
+        alpha:    0.06 + Math.random() * 0.15,
+        life:     0,
+        maxLife:  200 + Math.random() * 300,
+      });
+    }
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = polyFacets.length - 1; i >= 0; i--) {
+      const f = polyFacets[i];
+      f.x += f.vx * speed;
+      f.y += f.vy * speed;
+      f.rot += f.rotSpeed * 0.015 * speed;
+      f.life += speed;
+
+      if (f.life >= f.maxLife) { polyFacets.splice(i, 1); continue; }
+
+      const lifeT = f.life / f.maxLife;
+      const fade = lifeT < 0.2 ? lifeT / 0.2 : lifeT > 0.7 ? (1 - lifeT) / 0.3 : 1;
+      const fa = f.alpha * fade * int;
+
+      // Color based on vertical position — teal top, pink/purple bottom
+      const yRatio = f.y / H;
+      const fr = Math.round(120 + yRatio * 135);
+      const fg = Math.round(220 - yRatio * 100);
+      const fb = Math.round(220 + yRatio * 35);
+
+      drawRegularPoly(f.x, f.y, f.sides, f.size, f.rot);
+      ctx.strokeStyle = `rgba(${fr},${fg},${fb},${fa * 0.9})`;
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+
+      // Light fill
+      ctx.fillStyle = `rgba(${fr},${fg},${fb},${fa * 0.12})`;
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // ── Layer 5: Corner glow blooms — multicolor ─────────────────────────
+    const cornerColors = [
+      [100, 230, 200],  // top-left: teal
+      [180, 200, 255],  // top-right: light blue
+      [180, 80, 220],   // bottom-left: purple
+      [255, 140, 200],  // bottom-right: pink
+    ];
+    const corners = [[0, 0], [W, 0], [0, H], [W, H]];
+    for (let i = 0; i < corners.length; i++) {
+      const [ccx, ccy] = corners[i];
+      const [cr2, cg2, cb2] = cornerColors[i];
+      const cpulse = 0.5 + 0.5 * Math.sin(time * 0.7 + i * 1.6);
+      const cr = 90 * int * cpulse;
+      const cg = ctx.createRadialGradient(ccx, ccy, 0, ccx, ccy, cr);
+      cg.addColorStop(0,   `rgba(${cr2},${cg2},${cb2},${0.14 * int * cpulse})`);
+      cg.addColorStop(0.5, `rgba(${cr2},${cg2},${cb2},${0.04 * int})`);
+      cg.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.beginPath();
+      ctx.arc(ccx, ccy, cr, 0, Math.PI * 2);
+      ctx.fillStyle = cg;
+      ctx.fill();
+
+      // Angular rays from corners
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const rayCount = 4;
+      for (let r = 0; r < rayCount; r++) {
+        const baseAngle = (i * Math.PI / 2) + (r / rayCount) * (Math.PI / 2);
+        const rayLen = (40 + 30 * cpulse) * int;
+        const ra = baseAngle + Math.sin(time * 0.5 + r + i) * 0.15;
+        const rx2 = ccx + Math.cos(ra) * rayLen;
+        const ry2 = ccy + Math.sin(ra) * rayLen;
+        const rl = ctx.createLinearGradient(ccx, ccy, rx2, ry2);
+        rl.addColorStop(0,   `rgba(255,255,255,${0.2 * int * cpulse})`);
+        rl.addColorStop(0.5, `rgba(${cr2},${cg2},${cb2},${0.08 * int})`);
+        rl.addColorStop(1,   'rgba(0,0,0,0)');
+        ctx.strokeStyle = rl as unknown as string;
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(ccx, ccy);
+        ctx.lineTo(rx2, ry2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // Main draw loop
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -1578,6 +1884,7 @@
       buildWinter(W, H);
       buildAurora(W, H);
       buildRain(W, H);
+      buildPolygon(W, H);
     }
 
     ctx.clearRect(0, 0, W, H);
@@ -1596,6 +1903,7 @@
       case 'void':     drawVoid(W, H, time, int); break;
       case 'aurora':   drawAurora(W, H, time, int); break;
       case 'rain':     drawRain(W, H, time, int); break;
+      case 'polygon':  drawPolygon(W, H, time, int); break;
     }
 
     // Standalone black hole effect (works on any theme)
@@ -1616,6 +1924,7 @@
     buildWinter(canvas.width, canvas.height);
     buildAurora(canvas.width, canvas.height);
     buildRain(canvas.width, canvas.height);
+    buildPolygon(canvas.width, canvas.height);
 
     // Read initial values
     enabled = get(fx.borderEnabled);

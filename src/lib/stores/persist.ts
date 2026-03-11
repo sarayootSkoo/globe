@@ -14,7 +14,7 @@ import type { Theme } from './appState';
 import * as globe from './globeState';
 import * as fx from './themeEffects';
 
-const VALID_THEMES: readonly Theme[] = ['dark', 'light', 'fire', 'winter', 'galaxy', 'electric', 'void', 'aurora', 'rain'];
+const VALID_THEMES: readonly Theme[] = ['dark', 'light', 'fire', 'winter', 'galaxy', 'electric', 'void', 'aurora', 'rain', 'polygon'];
 
 // ── Debounce helper for sliders ──────────────────────────────────────────────
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -64,6 +64,7 @@ function buildEntries(): PersistEntry<any>[] {
     num(globe.globeOpacity,   'globe.opacity',     1,    0.1, 1),
     num(globe.dotBrightness,  'globe.dotBright',   1,    0, 20),
     num(globe.tourSpeed,      'globe.tourSpeed',   1,    0, 20),
+    bool(globe.showPolygonPlanet, 'globe.polyPlanet', false),
 
     // Theme effects (all numeric: 0–20 range covers 0%–2000%)
     num(fx.effectDensity, 'fx.density', 1,    0, 20),
@@ -106,6 +107,11 @@ function buildEntries(): PersistEntry<any>[] {
     num(fx.blackholeWidth,    'fx.bhWidth',         1,   0, 20),
     num(fx.blackholeHeight,   'fx.bhHeight',        1,   0, 20),
     num(fx.blackholeHue,      'fx.bhHue',         280,   0, 360),
+
+    // Polygon planet effects
+    num(fx.polyPulseSpeed,    'fx.polyPulse',       1,   0, 5),
+    num(fx.polyPlanetSize,    'fx.polySize',        1,   0, 3),
+    num(fx.polyGradHue,       'fx.polyGradHue',     0,   0, 360),
   ];
 }
 

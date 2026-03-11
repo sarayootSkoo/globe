@@ -16,6 +16,7 @@
   let showLinks     = $state(true);
   let pulseEnabled  = $state(true);
   let cometEnabled  = $state(true);
+  let showPolyPlanet = $state(false);
 
   let pulseSpeedVal   = $state(60);   // raw slider value 10–200
   let rotateSpeedVal  = $state(35);   // raw slider value 5–200
@@ -44,6 +45,7 @@
   let grpFireworkOpen = $state(safeGet<boolean>('ui.grpFw', false));
   let grpBhOpen       = $state(safeGet<boolean>('ui.grpBh', false));
   let grpBloomOpen    = $state(safeGet<boolean>('ui.grpBloom', false));
+  let grpPolyOpen     = $state(safeGet<boolean>('ui.grpPoly', false));
   let grpThemeOpen    = $state(safeGet<boolean>('ui.grpTheme', false));
   let grpMasterOpen   = $state(safeGet<boolean>('ui.grpMaster', true));
 
@@ -62,6 +64,7 @@
       case 'fw':       grpFireworkOpen = !grpFireworkOpen; safeSet('ui.grpFw', grpFireworkOpen); break;
       case 'bh':       grpBhOpen = !grpBhOpen;           safeSet('ui.grpBh', grpBhOpen); break;
       case 'bloom':    grpBloomOpen = !grpBloomOpen;     safeSet('ui.grpBloom', grpBloomOpen); break;
+      case 'poly':     grpPolyOpen = !grpPolyOpen;       safeSet('ui.grpPoly', grpPolyOpen); break;
       case 'theme':    grpThemeOpen = !grpThemeOpen;     safeSet('ui.grpTheme', grpThemeOpen); break;
       case 'master':   grpMasterOpen = !grpMasterOpen;   safeSet('ui.grpMaster', grpMasterOpen); break;
     }
@@ -117,6 +120,11 @@
   let fxBloomStrVal  = $state(100);   // 0–500 → 0–5
   let fxBloomRadVal  = $state(40);    // 0–200 → 0–2
   let fxBloomThrVal  = $state(30);    // 0–100 → 0–1
+
+  // Polygon planet controls
+  let polyPulseVal   = $state(100);   // 0–500 → 0–5
+  let polySizeVal    = $state(100);   // 20–300 → 0.2–3
+  let polyGradHueVal = $state(0);     // 0–360 raw
 
   // ── Subscribe to stores ──────────────────────────────────────────────────────
   $effect(() => {
@@ -180,13 +188,18 @@
     const u50 = fx.bloomStrength.subscribe(v         => { fxBloomStrVal = Math.round(v * 100); });
     const u51 = fx.bloomRadius.subscribe(v           => { fxBloomRadVal = Math.round(v * 100); });
     const u52 = fx.bloomThreshold.subscribe(v        => { fxBloomThrVal = Math.round(v * 100); });
+    const u61 = globeStore.showPolygonPlanet.subscribe(v => { showPolyPlanet = v; });
+    const u62 = fx.polyPulseSpeed.subscribe(v    => { polyPulseVal = Math.round(v * 100); });
+    const u63 = fx.polyPlanetSize.subscribe(v    => { polySizeVal = Math.round(v * 100); });
+    const u64 = fx.polyGradHue.subscribe(v       => { polyGradHueVal = Math.round(v); });
     return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); u8(); u9();
                    u10(); u11(); u12(); u13(); u14(); u15(); u16(); u17(); u18(); u19();
                    u20(); u21(); u22(); u23(); u24(); u25(); u26(); u27(); u28();
                    u29(); u30(); u31(); u32(); u33(); u34(); u35();
                    u36(); u37(); u38(); u39(); u40(); u41(); u42(); u43();
                    u44(); u45(); u46(); u47(); u48(); u49(); u50(); u51(); u52();
-                   u53(); u54(); u55(); u56(); u57(); u58(); u59(); u60(); };
+                   u53(); u54(); u55(); u56(); u57(); u58(); u59(); u60(); u61();
+                   u62(); u63(); u64(); };
   });
 
   // ── Zoom display label ───────────────────────────────────────────────────────
@@ -221,6 +234,10 @@
 
   function toggleComet(): void {
     globeStore.cometEnabled.update(v => !v);
+  }
+
+  function togglePolyPlanet(): void {
+    globeStore.showPolygonPlanet.update(v => !v);
   }
 
   // ---------------------------------------------------------------------------
@@ -468,6 +485,30 @@
     const raw = parseInt((e.target as HTMLInputElement).value, 10);
     fx.bloomThreshold.set(raw / 100);
   }
+
+  // ── Polygon planet handlers ─────────────────────────────────────────────
+  let polyPulseLabel   = $derived(polyPulseVal + '%');
+  let polySizeLabel    = $derived(polySizeVal + '%');
+  let polyGradHueLabel = $derived(polyGradHueVal === 0 ? 'Default' : polyGradHueVal + '\u00B0');
+
+  function handlePolyPulse(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.polyPulseSpeed.set(raw / 100);
+  }
+  function handlePolySize(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.polyPlanetSize.set(raw / 100);
+  }
+  function handlePolyGradHue(e: Event): void {
+    const raw = parseInt((e.target as HTMLInputElement).value, 10);
+    fx.polyGradHue.set(raw);
+  }
+  function resetPolygon(): void {
+    globeStore.showPolygonPlanet.set(false);
+    fx.polyPulseSpeed.set(1);
+    fx.polyPlanetSize.set(1);
+    fx.polyGradHue.set(0);
+  }
 </script>
 
 <div class="panel" id="globe-controls">
@@ -583,6 +624,21 @@
       aria-checked={cometEnabled}
       tabindex="0"
       onkeydown={(e) => e.key === 'Enter' && toggleComet()}
+    ></div>
+  </div>
+
+  <!-- Polygon Planet -->
+  <div class="globe-ctrl-row">
+    <span class="globe-ctrl-label">Poly Planet</span>
+    <div
+      class="globe-toggle"
+      class:on={showPolyPlanet}
+      title="Toggle polygon planet (low-poly icosphere)"
+      onclick={togglePolyPlanet}
+      role="switch"
+      aria-checked={showPolyPlanet}
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && togglePolyPlanet()}
     ></div>
   </div>
 
@@ -1055,6 +1111,42 @@
           <input type="range" class="fx-density-slider" min="0" max="100" value={fxBloomThrVal} title="Bloom threshold" oninput={handleBloomThr} />
         </div>
       {/if}
+    </div>
+  {/if}
+
+  <!-- ═══ Polygon Planet Group ═══════════════════════════════════════ -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="fx-group-header" onclick={() => toggleGrp('poly')}>
+    <span class="fx-group-label">Polygon</span>
+    <span class="chevron-sm" class:open={grpPolyOpen}></span>
+  </div>
+
+  {#if grpPolyOpen}
+    <div class="fx-group-body">
+      <div class="globe-ctrl-row">
+        <span class="globe-ctrl-label">Planet</span>
+        <div class="globe-toggle" class:on={showPolyPlanet} title="Toggle polygon planet"
+          onclick={togglePolyPlanet} role="switch" aria-checked={showPolyPlanet}
+          tabindex="0" onkeydown={(e) => e.key === 'Enter' && togglePolyPlanet()}></div>
+      </div>
+      {#if showPolyPlanet}
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header"><span class="globe-ctrl-label">Pulse</span><span class="globe-ctrl-label zoom-val">{polyPulseLabel}</span></div>
+          <input type="range" class="fx-speed-slider" min="0" max="500" value={polyPulseVal} title="Polygon planet breathing pulse speed" oninput={handlePolyPulse} />
+        </div>
+        <div class="globe-ctrl-row fx-slider-row">
+          <div class="zoom-header"><span class="globe-ctrl-label">Size</span><span class="globe-ctrl-label zoom-val">{polySizeLabel}</span></div>
+          <input type="range" class="fx-density-slider" min="20" max="300" value={polySizeVal} title="Polygon planet size" oninput={handlePolySize} />
+        </div>
+      {/if}
+      <div class="globe-ctrl-row fx-slider-row">
+        <div class="zoom-header"><span class="globe-ctrl-label">Grad Color</span><span class="globe-ctrl-label zoom-val">{polyGradHueLabel}</span></div>
+        <input type="range" class="bh-hue-slider" min="0" max="360" value={polyGradHueVal} title="Shift polygon background gradient hue (0 = default)" oninput={handlePolyGradHue} />
+      </div>
+      <div class="globe-ctrl-row" style="justify-content: flex-end; padding-top: 4px;">
+        <button class="preset-reset-btn" onclick={resetPolygon} title="Reset all polygon settings to defaults">Reset</button>
+      </div>
     </div>
   {/if}
 

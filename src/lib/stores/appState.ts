@@ -2,7 +2,7 @@ import { writable } from 'svelte/store';
 import { CATEGORIES } from '../constants';
 
 export type AppMode = 'explore' | 'path' | 'impact';
-export type Theme = 'dark' | 'light' | 'fire' | 'winter' | 'galaxy' | 'electric' | 'void' | 'aurora' | 'rain';
+export type Theme = 'dark' | 'light' | 'fire' | 'winter' | 'galaxy' | 'electric' | 'void' | 'aurora' | 'rain' | 'polygon';
 
 /**
  * Current interaction mode for the graph.

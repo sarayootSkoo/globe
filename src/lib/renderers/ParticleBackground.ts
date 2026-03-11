@@ -118,7 +118,7 @@ interface PlasmaSpark {
 const LIGHTNING_MAX = 3;      // max concurrent lightning bolts
 const PLASMA_SPARK_COUNT = 80;
 
-export type ParticleTheme = 'dark' | 'light' | 'fire' | 'winter' | 'galaxy' | 'electric';
+export type ParticleTheme = 'dark' | 'light' | 'fire' | 'winter' | 'galaxy' | 'electric' | 'polygon';
 
 /** Runtime-adjustable settings pushed from the UI stores */
 export interface EffectSettings {

@@ -49,6 +49,9 @@ export interface AnimateParams {
   showLinks: boolean;
   globeOpacity: number;
   dotBrightness: number;
+  showPolygonPlanet: boolean;
+  polyPulseSpeed: number;
+  polyPlanetSize: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,6 +70,7 @@ export class GlobeRenderer {
   linkLines: THREE.Line[] = [];
   dotParticles: THREE.Points | null = null;
   wireframe: THREE.Mesh | null = null;
+  polygonPlanet: THREE.Group | null = null;
 
   // ── Interaction state ──────────────────────────────────────────────────────
   raycaster: THREE.Raycaster;
@@ -184,6 +188,7 @@ export class GlobeRenderer {
     // ── Static globe geometry ─────────────────────────────────────────────────
     this._buildDotSphere();
     this._buildWireframe();
+    this._buildPolygonPlanet();
 
     // ── Status badge group (added to scene but hidden until enabled) ──────────
     this._statusBadgeGroup.visible = false;
@@ -244,6 +249,81 @@ export class GlobeRenderer {
     });
     this.wireframe = new THREE.Mesh(geo, mat);
     this.scene.add(this.wireframe);
+  }
+
+  /**
+   * Build the polygon planet — a low-poly icosphere with per-face coloring
+   * that sits inside the globe. Each face gets a distinct pastel color from
+   * a teal/pink/lavender/white palette, creating the faceted crystal look.
+   * An outer wireframe shell provides the reference image's geometric cage.
+   */
+  private _buildPolygonPlanet(): void {
+    const group = new THREE.Group();
+    const R = GLOBE_RADIUS * 0.52; // ~56% of globe radius for the inner planet
+
+    // ── Inner solid icosphere with per-face colors ───────────────────────
+    const solidGeo = new THREE.IcosahedronGeometry(R, 1);
+    // Convert to non-indexed so each face gets its own color
+    const nonIndexed = solidGeo.toNonIndexed();
+    const faceCount = nonIndexed.attributes.position.count / 3;
+    const faceColors = new Float32Array(nonIndexed.attributes.position.count * 3);
+
+    // Palette: teal, cyan-white, pink, lavender, white
+    const palette = [
+      [0.5, 1.0, 0.88],   // teal
+      [0.75, 0.95, 1.0],  // cyan-white
+      [1.0, 0.65, 0.85],  // pink
+      [0.8, 0.72, 1.0],   // lavender
+      [0.95, 0.97, 1.0],  // white
+      [0.55, 0.9, 0.8],   // mint
+      [0.9, 0.8, 1.0],    // light purple
+    ];
+
+    for (let f = 0; f < faceCount; f++) {
+      // Pick color based on face normal Y + some variation
+      const i0 = f * 9; // 3 vertices × 3 components
+      const ny = (
+        nonIndexed.attributes.position.array[i0 + 1] +
+        nonIndexed.attributes.position.array[i0 + 4] +
+        nonIndexed.attributes.position.array[i0 + 7]
+      ) / 3 / R; // average Y of face vertices, normalized
+      const colorIdx = Math.abs(Math.round((ny + 1) * 3.5 + f * 0.7)) % palette.length;
+      const [cr, cg, cb] = palette[colorIdx];
+
+      for (let v = 0; v < 3; v++) {
+        faceColors[(f * 3 + v) * 3]     = cr;
+        faceColors[(f * 3 + v) * 3 + 1] = cg;
+        faceColors[(f * 3 + v) * 3 + 2] = cb;
+      }
+    }
+
+    nonIndexed.setAttribute('color', new THREE.Float32BufferAttribute(faceColors, 3));
+
+    const solidMat = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+    });
+    const solidMesh = new THREE.Mesh(nonIndexed, solidMat);
+    group.add(solidMesh);
+
+    // ── Outer wireframe cage (slightly larger) ──────────────────────────
+    const wireGeo = new THREE.IcosahedronGeometry(R * 1.35, 2);
+    const wireMat = new THREE.MeshBasicMaterial({
+      color: 0xd0e8ff,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.25,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const wireMesh = new THREE.Mesh(wireGeo, wireMat);
+    group.add(wireMesh);
+
+    group.visible = false; // hidden by default, shown on polygon theme
+    this.polygonPlanet = group;
+    this.scene.add(group);
   }
 
   /** Solid circle with soft anti-aliased edge — used for node dots. */
@@ -499,6 +579,26 @@ export class GlobeRenderer {
     if (this.wireframe)    this.wireframe.visible    = params.showWireframe;
     if (this.dotParticles) this.dotParticles.visible = params.showDots;
     this.linkLines.forEach(l => { l.visible = params.showLinks; });
+
+    // ── Polygon planet — rotation, pulse breathing, size ────────────────
+    if (this.polygonPlanet) {
+      this.polygonPlanet.visible = params.showPolygonPlanet;
+      if (params.showPolygonPlanet) {
+        this.polygonPlanet.rotation.y += dt * 0.15;
+        this.polygonPlanet.rotation.x += dt * 0.05;
+
+        // Smooth breathing pulse on the planet
+        const pps = params.polyPulseSpeed;
+        if (pps > 0) {
+          this.pulseTime += 0; // already advanced by main pulse
+          const breath = 1 + Math.sin(timestamp * 0.001 * pps) * 0.06;
+          const baseScale = params.polyPlanetSize;
+          this.polygonPlanet.scale.setScalar(baseScale * breath);
+        } else {
+          this.polygonPlanet.scale.setScalar(params.polyPlanetSize);
+        }
+      }
+    }
 
     // ── Globe opacity ───────────────────────────────────────────────────
     const gOp = params.globeOpacity;
@@ -1450,7 +1550,7 @@ export class GlobeRenderer {
     // Wireframe color per theme
     const wireColors: Record<string, number> = {
       dark: 0x00d4ff, light: 0xe0aa20, fire: 0xff6a00, winter: 0x7ec8ff, galaxy: 0xb46aff, electric: 0x3c8cff,
-      void: 0xb040ff, aurora: 0x40ffa0, rain: 0x6090c0,
+      void: 0xb040ff, aurora: 0x40ffa0, rain: 0x6090c0, polygon: 0x80ffe0,
     };
 
     // ── Capture old colors for smooth transition ──────────────────────────
@@ -1541,6 +1641,13 @@ export class GlobeRenderer {
             t * 0.38 + (1 - t) * 0.25,
             t * 0.56 + (1 - t) * 0.38,
             t * 0.75 + (1 - t) * 0.55,
+          );
+        } else if (themeName === 'polygon') {
+          // Teal top → purple-pink bottom gradient
+          colors.push(
+            t * 0.5  + (1 - t) * 0.85,
+            t * 1.0  + (1 - t) * 0.35,
+            t * 0.88 + (1 - t) * 0.9,
           );
         } else {
           // Cyan top → purple bottom (dark default)
@@ -1671,6 +1778,17 @@ export class GlobeRenderer {
       this.scene.remove(this.wireframe);
       this.wireframe.geometry.dispose();
       (this.wireframe.material as THREE.Material).dispose();
+    }
+
+    // Polygon planet
+    if (this.polygonPlanet) {
+      this.scene.remove(this.polygonPlanet);
+      this.polygonPlanet.traverse(child => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          (child.material as THREE.Material).dispose();
+        }
+      });
     }
 
     // Heatmap rings

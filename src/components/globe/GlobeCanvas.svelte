@@ -266,6 +266,21 @@
       electricArcs?.setTheme(t);
       electricArcs?.setEnabled(true);
       fireworks?.setTheme(t);
+      // Auto-toggle polygon planet with polygon theme
+      globeStore.showPolygonPlanet.set(t === 'polygon');
+    });
+
+    // ── Polygon gradient hue — shift background gradient color ─────────────
+    const unsubPolyGradHue = fx.polyGradHue.subscribe(hue => {
+      if (hue === 0) {
+        // Default: restore original gradient colors
+        document.documentElement.style.setProperty('--polygon-grad-top', '#4ac0a8');
+        document.documentElement.style.setProperty('--polygon-grad-bottom', '#6030b0');
+      } else {
+        // Hue-shift: generate new gradient colors from hue
+        document.documentElement.style.setProperty('--polygon-grad-top', `hsl(${hue}, 55%, 52%)`);
+        document.documentElement.style.setProperty('--polygon-grad-bottom', `hsl(${(hue + 120) % 360}, 60%, 40%)`);
+      }
     });
 
     // ── Electric arc effect stores ────────────────────────────────────────
@@ -495,6 +510,9 @@
         showLinks:     get(globeStore.showLinks),
         globeOpacity:  get(globeStore.globeOpacity),
         dotBrightness: get(globeStore.dotBrightness),
+        showPolygonPlanet: get(globeStore.showPolygonPlanet),
+        polyPulseSpeed: get(fx.polyPulseSpeed),
+        polyPlanetSize: get(fx.polyPlanetSize),
       });
     }
 
@@ -544,6 +562,7 @@
       unsubBloomParams();
       unsubBloomR();
       unsubBloomT();
+      unsubPolyGradHue();
     };
   });
 

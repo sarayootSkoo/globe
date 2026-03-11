@@ -175,8 +175,37 @@
   --node-default: #5080b0;
   --font: 'Courier New', monospace;
 }
+[data-theme="polygon"] {
+  --bg: #1a1040;
+  --bg-top: #3ab0a0;
+  --bg-bottom: #5020a0;
+  --panel-bg: rgba(30, 20, 70, 0.88);
+  --accent: #80ffe0;
+  --text: #e0f0ff;
+  --text-dim: rgba(180, 200, 220, 0.6);
+  --border: rgba(180, 220, 255, 0.18);
+  --border-hi: rgba(180, 220, 255, 0.4);
+  --particle-color: 200, 180, 255;
+  --green: #80ffc0;
+  --orange: #60c0ff;
+  --yellow: #c0a0ff;
+  --red: #ff80c0;
+  --node-core: #80ffe0;
+  --node-api: #60c0ff;
+  --node-util: #c090ff;
+  --node-data: #ff90d0;
+  --node-ui: #ffb0e0;
+  --node-default: #a0d0ff;
+  --font: 'Courier New', monospace;
+  --banner-bg: rgba(50,160,140,0.6);
+  --scanline-color: rgba(255,255,255,0.01);
+  --corner-color: var(--accent);
+  --polygon-grad-top: #4ac0a8;
+  --polygon-grad-bottom: #6030b0;
+}
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; height: 100vh; }
+[data-theme="polygon"] body { background: linear-gradient(180deg, var(--polygon-grad-top) 0%, var(--polygon-grad-bottom) 100%); }
 
 /* ── Panels Base ──────────────────────── */
 .panel {

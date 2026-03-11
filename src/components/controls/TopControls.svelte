@@ -30,6 +30,7 @@
     { value: 'void', label: '🕳 Void' },
     { value: 'aurora', label: '🌌 Aurora' },
     { value: 'rain', label: '🌧 Rain' },
+    { value: 'polygon', label: '⬡ Polygon' },
   ];
 
   let glowLabel = $derived((): string => {
@@ -138,6 +139,9 @@
   :global([data-theme="rain"]) .ctrl-select {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236090c0'/%3E%3C/svg%3E");
   }
+  :global([data-theme="polygon"]) .ctrl-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2380ffe0'/%3E%3C/svg%3E");
+  }
   .ctrl-select:hover {
     border-color: var(--accent);
   }
@@ -176,6 +180,10 @@
   :global([data-theme="rain"]) .ctrl-select option {
     background: #0a0c10;
     color: #b0c0d0;
+  }
+  :global([data-theme="polygon"]) .ctrl-select option {
+    background: #1a1040;
+    color: #e0f0ff;
   }
   .theme-select {
     min-width: 100px;
