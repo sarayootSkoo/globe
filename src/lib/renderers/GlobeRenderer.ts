@@ -85,6 +85,10 @@ export class GlobeRenderer {
   /** Active impact hop map: nodeId → hop distance. null = no impact active. */
   private _impactMap: Map<string, number> | null = null;
 
+  // ── Cross-repo state ──────────────────────────────────────────────────────
+  /** True while cross-repo highlight mode is active. */
+  private _crossRepoActive: boolean = false;
+
   // ── Fly-to animation ───────────────────────────────────────────────────────
   _flyAnimId: number | null = null;
 
@@ -1084,6 +1088,82 @@ export class GlobeRenderer {
    */
   clearImpact(): void {
     this._impactMap = null;
+
+    const gl = this._glowLevel;
+
+    this.nodeMeshes.forEach(({ data, mat, glowMat, glowMesh, mesh, baseRadius }) => {
+      const cat = CATEGORIES[data.cat] || CATEGORIES['meta'];
+      const colorHex = parseColorToHex(cat.color);
+      mat.color.setHex(colorHex);
+      mat.opacity = 0.95;
+      glowMat.color.setHex(colorHex);
+      glowMat.opacity = 0.06 + 0.12 * gl;
+      glowMesh.scale.setScalar(1);
+      const br = (baseRadius || 6) * 2;
+      mesh.scale.setScalar(br);
+    });
+
+    this.linkLines.forEach(line => {
+      (line.material as THREE.LineBasicMaterial).opacity = 0.07;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Cross-repo highlighting
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Highlights cross-repo connections.
+   * - Nodes that participate in cross-repo links: full category colour, full brightness.
+   * - All other nodes: dimmed to ~0.15 opacity (gray).
+   * - Cross-repo links: brightened (opacity 0.6).
+   * - Same-repo links: nearly invisible (opacity 0.01).
+   *
+   * @param crossRepoNodeIds  Set of node IDs that have at least one cross-repo link.
+   * @param crossRepoLinkIndices  Set of indices into `this.linkLines` for cross-repo arcs.
+   */
+  highlightCrossRepo(crossRepoNodeIds: Set<string>, crossRepoLinkIndices: Set<number>): void {
+    if (!this.nodeMeshes.length) return;
+    this._crossRepoActive = true;
+
+    const GRAY = 0x3a3a3a;
+
+    this.nodeMeshes.forEach(({ data, mat, glowMat, glowMesh, mesh, baseRadius }) => {
+      const br = (baseRadius || 6) * 2;
+      if (crossRepoNodeIds.has(data.id)) {
+        // Cross-repo participant: full colour + slight emphasis
+        const cat = CATEGORIES[data.cat] || CATEGORIES['meta'];
+        const colorHex = parseColorToHex(cat.color);
+        mat.color.setHex(colorHex);
+        mat.opacity = 1;
+        glowMat.color.setHex(colorHex);
+        glowMat.opacity = 0.2;
+        glowMesh.scale.setScalar(1.3);
+        mesh.scale.setScalar(br * 1.1);
+      } else {
+        // Same-repo only: dim gray
+        mat.color.setHex(GRAY);
+        mat.opacity = 0.15;
+        glowMat.color.setHex(GRAY);
+        glowMat.opacity = 0.01;
+        glowMesh.scale.setScalar(0.3);
+        mesh.scale.setScalar(br * 0.7);
+      }
+    });
+
+    // Brighten cross-repo links; almost-hide same-repo links
+    this.linkLines.forEach((line, idx) => {
+      (line.material as THREE.LineBasicMaterial).opacity =
+        crossRepoLinkIndices.has(idx) ? 0.6 : 0.01;
+    });
+  }
+
+  /**
+   * Removes cross-repo highlighting and restores default node/link appearance.
+   */
+  clearCrossRepo(): void {
+    if (!this._crossRepoActive) return;
+    this._crossRepoActive = false;
 
     const gl = this._glowLevel;
 

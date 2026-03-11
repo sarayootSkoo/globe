@@ -1,12 +1,20 @@
 <script lang="ts">
   import { currentMode, pathSelection, selectedNodeId } from '../../lib/stores/appState';
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
+  import { showCrossRepo, crossRepoFilter } from '../../lib/stores/crossRepoState';
   import type { AppMode } from '../../lib/stores/appState';
   import type { GraphNode, GraphLink } from '../../lib/types';
+
+  // ── Props ──────────────────────────────────────────────────────────────────
+  interface Props {
+    oncrossrepopanel?: () => void;
+  }
+  let { oncrossrepopanel }: Props = $props();
 
   let mode = $state<AppMode>('explore');
   let nodes = $state<GraphNode[]>([]);
   let links = $state<GraphLink[]>([]);
+  let crossRepoPanelOpen = $state(false);
 
   $effect(() => {
     const unsub = currentMode.subscribe(v => { mode = v; });
@@ -38,6 +46,16 @@
     } else {
       resetMode();
       currentMode.set('impact');
+    }
+  }
+
+  function handleCrossRepo(): void {
+    crossRepoPanelOpen = !crossRepoPanelOpen;
+    oncrossrepopanel?.();
+    if (!crossRepoPanelOpen) {
+      // Closing the panel also turns off highlight
+      showCrossRepo.set(false);
+      crossRepoFilter.set(null);
     }
   }
 
@@ -84,6 +102,14 @@
     onclick={handleImpact}
   >
     Impact
+  </button>
+  <button
+    class="tool-btn"
+    class:active={crossRepoPanelOpen}
+    title="Show cross-repo dependency map"
+    onclick={handleCrossRepo}
+  >
+    Cross-Repo
   </button>
   <button
     class="tool-btn"

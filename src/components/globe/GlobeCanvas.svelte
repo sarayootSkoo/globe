@@ -19,7 +19,8 @@
   import * as globeStore from '../../lib/stores/globeState';
   import { showPreview } from '../../lib/stores/previewState';
   import { showStatusBadges } from '../../lib/stores/statusState';
-  import type { GraphNode, WASDKeys } from '../../lib/types';
+  import { showCrossRepo, crossRepoFilter } from '../../lib/stores/crossRepoState';
+  import type { GraphNode, GraphLink, WASDKeys } from '../../lib/types';
 
   // ── Props ──────────────────────────────────────────────────────────────────
   interface Props {
@@ -198,6 +199,60 @@
       } else {
         renderer.clearStatusBadges();
       }
+    });
+
+    // ── React to cross-repo highlight changes ────────────────────────────────
+    function applyCrossRepo(): void {
+      if (!renderer) return;
+      const crOn     = get(showCrossRepo);
+      const crFilter = get(crossRepoFilter);
+      const allNodes = get(graphNodes);
+      const allLinks = get(graphLinks);
+
+      if (!crOn) {
+        renderer.clearCrossRepo();
+        return;
+      }
+
+      // Build nodeId→cat map
+      const nodeById = new Map(allNodes.map(n => [n.id, n]));
+
+      // Determine which links are cross-repo (and optionally filtered to one pair)
+      const crossRepoNodeIds = new Set<string>();
+      const crossRepoLinkIndices = new Set<number>();
+
+      renderer.linkLines.forEach((line, idx) => {
+        const l = line.userData['linkData'] as GraphLink | undefined;
+        if (!l) return;
+        const sid = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+        const tid = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+        const sn  = nodeById.get(sid);
+        const tn  = nodeById.get(tid);
+        if (!sn || !tn || sn.cat === tn.cat) return;
+
+        // If a filter is active, only include this pair
+        if (crFilter) {
+          // Build the canonical pair key the same way CrossRepoPanel does
+          const dir = l.direction ?? 'bidirectional';
+          const displaySrc = dir === 'backward' ? tn.cat : sn.cat;
+          const displayTgt = dir === 'backward' ? sn.cat : tn.cat;
+          const key = `${displaySrc}\u2192${displayTgt}`;
+          if (key !== crFilter) return;
+        }
+
+        crossRepoLinkIndices.add(idx);
+        crossRepoNodeIds.add(sid);
+        crossRepoNodeIds.add(tid);
+      });
+
+      renderer.highlightCrossRepo(crossRepoNodeIds, crossRepoLinkIndices);
+    }
+
+    const unsubCrossRepo = showCrossRepo.subscribe(() => {
+      applyCrossRepo();
+    });
+    const unsubCrossRepoFilter = crossRepoFilter.subscribe(() => {
+      applyCrossRepo();
     });
 
     // ── React to glow level changes ─────────────────────────────────────────
@@ -453,6 +508,8 @@
       unsubImpact();
       unsubImpactMode();
       unsubStatusBadges();
+      unsubCrossRepo();
+      unsubCrossRepoFilter();
       unsubGlow();
       unsubTheme();
       unsubAutoRotate();
