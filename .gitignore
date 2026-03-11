@@ -1,8 +1,4 @@
 node_modules/
 dist/
 dist/*
-*/CLAUDE.md
-src/*/CLAUDE.md
-src/*/*/CLAUDE.md
-src/*/*/*/CLAUDE.md
-src/CLAUDE.md
+**/CLAUDE.md
