@@ -1,0 +1,271 @@
+<script lang="ts">
+  import type { CardType } from '../../lib/types';
+  import { CATEGORIES } from '../../lib/constants';
+  import { addLocalCard, updateLifecycle } from '../../lib/stores/kanbanState';
+  import { WORKFLOW_CHAINS } from '../../lib/workflow/workflowEngine';
+  import { buildCommandString, COMMAND_REGISTRY } from '../../lib/workflow/commandRegistry';
+
+  interface Props {
+    onClose: () => void;
+  }
+
+  let { onClose }: Props = $props();
+
+  let title = $state('');
+  let section = $state('');
+  let customSection = $state('');
+  let cardType = $state<CardType>('spec');
+  let description = $state('');
+  let chainId = $state('feature');
+  let files = $state<File[]>([]);
+
+  let allSections = $derived(Object.keys(CATEGORIES).sort());
+  let effectiveSection = $derived(section === '__custom' ? customSection : section);
+
+  // Upload path preview
+  let now = new Date();
+  let dateStr = $derived(
+    `${String(now.getDate()).padStart(2,'0')}_${String(now.getMonth()+1).padStart(2,'0')}_${now.getFullYear()}`
+  );
+  let uploadPath = $derived(
+    effectiveSection && files.length > 0
+      ? `uploads/${dateStr}/${effectiveSection}/`
+      : null
+  );
+
+  const TYPE_OPTIONS: { value: CardType; icon: string; label: string }[] = [
+    { value: 'spec',       icon: '\u{1F4CB}', label: 'Spec' },
+    { value: 'discussion', icon: '\u{1F4AC}', label: 'Discussion' },
+    { value: 'task',       icon: '\u{1F527}', label: 'Task' },
+    { value: 'issue',      icon: '\u{1F41B}', label: 'Issue' },
+  ];
+
+  function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    if (e.dataTransfer?.files) {
+      files = [...files, ...Array.from(e.dataTransfer.files)];
+    }
+  }
+
+  function handleFileInput(e: Event) {
+    const input = e.target as HTMLInputElement;
+    if (input.files) {
+      files = [...files, ...Array.from(input.files)];
+    }
+  }
+
+  function removeFile(idx: number) {
+    files = files.filter((_, i) => i !== idx);
+  }
+
+  function formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function createCard(andStart: boolean) {
+    if (!title.trim()) return;
+    const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    addLocalCard({
+      id,
+      title: title.trim(),
+      section: effectiveSection || undefined,
+      column: andStart ? 'design' : 'create',
+      type: cardType,
+      uploadPath: uploadPath ?? undefined,
+      createdAt: Date.now(),
+    });
+
+    if (andStart) {
+      updateLifecycle(id, 'started');
+
+      // Build command and copy to clipboard
+      const cmd = cardType === 'issue' ? '/issue' : '/chore';
+      const cmdStr = uploadPath
+        ? `${cmd} '${uploadPath}'`
+        : `${cmd} "${title.trim()}"`;
+      navigator.clipboard.writeText(cmdStr);
+    }
+
+    onClose();
+  }
+</script>
+
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="dialog-overlay" onclick={onClose}>
+  <div class="dialog" onclick={(e) => e.stopPropagation()}>
+    <div class="dialog-title">CREATE NEW CARD</div>
+    <div class="dialog-divider"></div>
+
+    <!-- Title -->
+    <div class="field">
+      <label class="field-label">Title</label>
+      <input class="field-input" type="text" bind:value={title} placeholder="Card title..." />
+    </div>
+
+    <!-- Section -->
+    <div class="field">
+      <label class="field-label">Section</label>
+      <select class="field-select" bind:value={section}>
+        <option value="">Select section</option>
+        {#each allSections as s}
+          <option value={s}>{CATEGORIES[s]?.label || s}</option>
+        {/each}
+        <option value="__custom">Custom...</option>
+      </select>
+      {#if section === '__custom'}
+        <input class="field-input mt-4" type="text" bind:value={customSection} placeholder="Custom section name..." />
+      {/if}
+    </div>
+
+    <!-- Type -->
+    <div class="field">
+      <label class="field-label">Type</label>
+      <div class="type-options">
+        {#each TYPE_OPTIONS as opt}
+          <label class="type-option" class:selected={cardType === opt.value}>
+            <input type="radio" bind:group={cardType} value={opt.value} />
+            <span>{opt.icon} {opt.label}</span>
+          </label>
+        {/each}
+      </div>
+    </div>
+
+    <!-- Description -->
+    <div class="field">
+      <label class="field-label">Description</label>
+      <textarea class="field-textarea" bind:value={description} rows="3" placeholder="Brief description..."></textarea>
+    </div>
+
+    <!-- Workflow Chain -->
+    <div class="field">
+      <label class="field-label">Workflow</label>
+      <select class="field-select" bind:value={chainId}>
+        {#each WORKFLOW_CHAINS as chain}
+          <option value={chain.id}>{chain.name} ({chain.steps.length} steps)</option>
+        {/each}
+      </select>
+    </div>
+
+    <!-- File Drop Zone -->
+    <div class="field">
+      <label class="field-label">Attachments</label>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="drop-zone"
+        ondragover={(e) => e.preventDefault()}
+        ondrop={handleDrop}
+      >
+        <div class="drop-text">Drag and drop files here</div>
+        <div class="drop-or">or</div>
+        <label class="browse-btn">
+          Browse for files
+          <input type="file" multiple onchange={handleFileInput} style="display:none" />
+        </label>
+      </div>
+
+      {#if files.length > 0}
+        <div class="file-list">
+          {#each files as file, idx}
+            <div class="file-item">
+              <span class="file-name">{file.name}</span>
+              <span class="file-size">{formatSize(file.size)}</span>
+              <button class="file-remove" onclick={() => removeFile(idx)}>x</button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      {#if uploadPath}
+        <div class="upload-path">Files will be saved to: {uploadPath}</div>
+      {/if}
+    </div>
+
+    <!-- Actions -->
+    <div class="dialog-actions">
+      <button class="btn btn-primary" onclick={() => createCard(true)} disabled={!title.trim()}>
+        Create & Start
+      </button>
+      <button class="btn btn-secondary" onclick={() => createCard(false)} disabled={!title.trim()}>
+        Create as Draft
+      </button>
+      <button class="btn btn-ghost" onclick={onClose}>Cancel</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .dialog-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; }
+  .dialog {
+    background: #161922; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+    padding: 24px; width: 520px; max-width: 90vw; max-height: 85vh; overflow-y: auto;
+    font-family: var(--font, 'JetBrains Mono', monospace);
+  }
+  .dialog-title { font-size: 13px; font-weight: 700; color: #e0e0e0; letter-spacing: 0.08em; }
+  .dialog-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 14px 0; }
+
+  .field { margin-bottom: 16px; }
+  .field-label { display: block; font-size: 11px; color: #666; margin-bottom: 6px; letter-spacing: 0.04em; }
+  .field-input, .field-select, .field-textarea {
+    width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #ccc; font-family: inherit; outline: none;
+    box-sizing: border-box;
+  }
+  .field-input:focus, .field-select:focus, .field-textarea:focus { border-color: rgba(0,229,255,0.4); }
+  .field-textarea { resize: vertical; min-height: 60px; }
+  .mt-4 { margin-top: 6px; }
+
+  .type-options { display: flex; gap: 6px; flex-wrap: wrap; }
+  .type-option {
+    padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; color: #888;
+    border: 1px solid rgba(255,255,255,0.06); transition: all 0.15s;
+  }
+  .type-option:hover { background: rgba(255,255,255,0.04); }
+  .type-option.selected { background: rgba(0,229,255,0.08); border-color: rgba(0,229,255,0.3); color: #00e5ff; }
+  .type-option input { display: none; }
+
+  .drop-zone {
+    border: 2px dashed rgba(255,255,255,0.1); border-radius: 8px; padding: 24px;
+    text-align: center; transition: all 0.15s;
+  }
+  .drop-zone:hover { border-color: rgba(0,229,255,0.3); background: rgba(0,229,255,0.02); }
+  .drop-text { font-size: 12px; color: #666; margin-bottom: 8px; }
+  .drop-or { font-size: 10px; color: #444; margin-bottom: 8px; }
+  .browse-btn {
+    display: inline-block; padding: 6px 16px; border-radius: 6px; cursor: pointer;
+    font-size: 11px; color: #00e5ff; background: rgba(0,229,255,0.08);
+    border: 1px solid rgba(0,229,255,0.2);
+  }
+  .browse-btn:hover { background: rgba(0,229,255,0.15); }
+
+  .file-list { margin-top: 10px; }
+  .file-item {
+    display: flex; align-items: center; gap: 10px; padding: 6px 10px; margin: 4px 0;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;
+  }
+  .file-name { flex: 1; font-size: 11px; color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-size { font-size: 10px; color: #666; flex-shrink: 0; }
+  .file-remove {
+    background: none; border: none; color: #ff5555; cursor: pointer; font-size: 12px;
+    padding: 2px 6px; border-radius: 4px;
+  }
+  .file-remove:hover { background: rgba(255,85,85,0.1); }
+
+  .upload-path { margin-top: 8px; font-size: 10px; color: #666; font-style: italic; }
+
+  .dialog-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 20px; }
+  .btn {
+    border: none; border-radius: 6px; padding: 10px 16px; font-size: 12px;
+    font-family: inherit; cursor: pointer; font-weight: 600;
+  }
+  .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .btn-primary { background: rgba(0,229,255,0.15); color: #00e5ff; border: 1px solid rgba(0,229,255,0.3); }
+  .btn-primary:hover:not(:disabled) { background: rgba(0,229,255,0.25); }
+  .btn-secondary { background: rgba(255,255,255,0.05); color: #aaa; border: 1px solid rgba(255,255,255,0.08); }
+  .btn-secondary:hover:not(:disabled) { background: rgba(255,255,255,0.1); }
+  .btn-ghost { background: transparent; color: #666; }
+  .btn-ghost:hover { color: #999; }
+</style>

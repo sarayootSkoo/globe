@@ -2,6 +2,7 @@ import { writable } from 'svelte/store';
 import { CATEGORIES } from '../constants';
 
 export type AppMode = 'explore' | 'path' | 'impact';
+export type ViewMode = 'globe' | 'kanban';
 export type Theme = 'dark' | 'light' | 'fire' | 'winter' | 'galaxy' | 'electric' | 'void' | 'aurora' | 'rain' | 'polygon';
 
 /**
@@ -42,3 +43,6 @@ export const pathSelection = writable<string[]>([]);
 
 /** Immersive mode — hides all UI panels, shows only globe + effects */
 export const immersiveMode = writable<boolean>(false);
+
+/** Dashboard view mode — globe (3D) or kanban (task board in 3D) */
+export const viewMode = writable<ViewMode>('globe');

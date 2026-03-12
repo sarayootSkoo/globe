@@ -12,7 +12,9 @@
   import { GlobeAutoTour } from '../../lib/renderers/GlobeAutoTour';
   import { GlobeFireworks } from '../../lib/renderers/GlobeFireworks';
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
-  import { glowLevel, selectedNodeId, theme, activeCats, currentMode } from '../../lib/stores/appState';
+  import { glowLevel, selectedNodeId, theme, activeCats, currentMode, viewMode } from '../../lib/stores/appState';
+  import { kanbanColumns } from '../../lib/stores/kanbanState';
+  import { CATEGORIES } from '../../lib/constants';
   import * as fx from '../../lib/stores/themeEffects';
   import { searchMatched } from '../../lib/stores/searchState';
   import { impactNodeId, impactHopMap } from '../../lib/stores/impactState';
@@ -448,6 +450,17 @@
       renderer.updateBloom(get(fx.bloomStrength), get(fx.bloomRadius), get(fx.bloomThreshold));
     });
 
+    // ── React to viewMode changes (globe ↔ kanban) ─────────────────────────
+    const unsubViewMode = viewMode.subscribe(v => {
+      if (!renderer) return;
+      if (v === 'kanban') {
+        const cols = get(kanbanColumns);
+        renderer.showKanban(cols, CATEGORIES);
+      } else {
+        renderer.showGlobe();
+      }
+    });
+
     // ── Resize ───────────────────────────────────────────────────────────────
     _resizeHandler = () => renderer?.resize();
     window.addEventListener('resize', _resizeHandler);
@@ -563,6 +576,7 @@
       unsubBloomR();
       unsubBloomT();
       unsubPolyGradHue();
+      unsubViewMode();
     };
   });
 
@@ -592,11 +606,24 @@
   // Canvas event handlers
   // ---------------------------------------------------------------------------
   function handleMouseMove(e: MouseEvent): void {
-    renderer?.handleMouseMove(e);
+    if (!renderer) return;
+    if (renderer.currentViewMode === 'kanban') {
+      renderer.handleKanbanHover(e);
+    } else {
+      renderer.handleMouseMove(e);
+    }
   }
 
-  function handleClick(): void {
-    renderer?.handleClick();
+  function handleClick(e: MouseEvent): void {
+    if (!renderer) return;
+    if (renderer.currentViewMode === 'kanban') {
+      const nodeId = renderer.handleKanbanClick(e);
+      if (nodeId) {
+        selectedNodeId.set(nodeId);
+      }
+    } else {
+      renderer.handleClick();
+    }
   }
 
   function handleMouseLeave(): void {

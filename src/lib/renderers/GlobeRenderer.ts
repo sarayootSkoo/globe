@@ -15,8 +15,9 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
-import type { GraphNode, GraphLink } from '../types';
+import type { GraphNode, GraphLink, KanbanCard, KanbanStatus, Category } from '../types';
 import { CATEGORIES, GLOBE_RADIUS, DOT_COUNT, DEFAULT_CAM_DIST, FOCUS_CAM_DIST } from '../constants';
+import { KanbanRenderer, animateCameraTo, KANBAN_CAM, GLOBE_CAM } from './KanbanRenderer';
 import { parseColorToHex } from '../utils/color';
 import { fibonacciSphere, computeGlobePositions, greatCircleArc } from '../utils/sphere';
 import { getConnected } from '../utils/graph';
@@ -148,6 +149,11 @@ export class GlobeRenderer {
     duration: number;       // seconds
   } | null = null;
 
+  // ── Kanban ────────────────────────────────────────────────────────────────
+  private kanbanRenderer: KanbanRenderer | null = null;
+  currentViewMode: 'globe' | 'kanban' = 'globe';
+  private _cameraAnim: { cancel: () => void } | null = null;
+
   // ---------------------------------------------------------------------------
   // Constructor
   // ---------------------------------------------------------------------------
@@ -193,6 +199,9 @@ export class GlobeRenderer {
     // ── Status badge group (added to scene but hidden until enabled) ──────────
     this._statusBadgeGroup.visible = false;
     this.scene.add(this._statusBadgeGroup);
+
+    // ── Kanban renderer (shares this scene) ───────────────────────────────────
+    this.kanbanRenderer = new KanbanRenderer(this.scene);
 
     // ── Raycaster + mouse ─────────────────────────────────────────────────────
     this.raycaster = new THREE.Raycaster();
@@ -959,6 +968,142 @@ export class GlobeRenderer {
     };
 
     this._flyAnimId = requestAnimationFrame(step);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Kanban view
+  // ---------------------------------------------------------------------------
+
+  /** Switch to kanban view — fly camera + show cards */
+  showKanban(
+    columns: Map<KanbanStatus, KanbanCard[]>,
+    categories: Record<string, Category>,
+  ): void {
+    if (!this.kanbanRenderer) return;
+    this.currentViewMode = 'kanban';
+    this.kanbanRenderer.update(columns, categories);
+    this.kanbanRenderer.setVisible(true);
+
+    // Cancel any in-flight camera animation
+    this._cameraAnim?.cancel();
+    if (this._flyAnimId !== null) {
+      cancelAnimationFrame(this._flyAnimId);
+      this._flyAnimId = null;
+    }
+
+    // Stop auto-rotate during kanban
+    this.controls.autoRotate = false;
+
+    // Hide globe elements so they don't obscure the kanban board
+    this._setGlobeVisible(false);
+
+    // Configure controls for kanban mode:
+    // - Disable rotation (no orbiting the board)
+    // - Remap left-click to pan (drag to scroll the board)
+    // - Enable screen-space panning (up/down = up/down, not orbit-plane)
+    // - Allow zoom in/out on the board
+    this.controls.enableRotate = false;
+    this.controls.screenSpacePanning = true;
+    this.controls.mouseButtons = {
+      LEFT: THREE.MOUSE.PAN,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    this.controls.minDistance = 20;
+    this.controls.maxDistance = 200;
+    this.controls.panSpeed = 1.5;
+
+    this._cameraAnim = animateCameraTo(
+      this.camera,
+      this.controls,
+      KANBAN_CAM,
+      2000,
+      () => {
+        this._cameraAnim = null;
+      },
+    );
+  }
+
+  /** Switch back to globe view */
+  showGlobe(): void {
+    this.currentViewMode = 'globe';
+
+    // Cancel any in-flight camera animation
+    this._cameraAnim?.cancel();
+
+    // Restore orbit controls for globe mode
+    this.controls.enableRotate = true;
+    this.controls.screenSpacePanning = false;
+    this.controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE,
+      MIDDLE: THREE.MOUSE.DOLLY,
+      RIGHT: THREE.MOUSE.PAN,
+    };
+    this.controls.minDistance = 400;
+    this.controls.maxDistance = 1800;
+    this.controls.panSpeed = 1.0;
+
+    // Restore globe elements
+    this._setGlobeVisible(true);
+
+    this._cameraAnim = animateCameraTo(
+      this.camera,
+      this.controls,
+      GLOBE_CAM,
+      2000,
+      () => {
+        this._cameraAnim = null;
+        this.kanbanRenderer?.setVisible(false);
+        this.controls.autoRotate = true;
+      },
+    );
+  }
+
+  /** Hide/show all globe-specific objects (dots, wireframe, nodes, links, etc.) */
+  private _setGlobeVisible(visible: boolean): void {
+    if (this.dotParticles) this.dotParticles.visible = visible;
+    if (this.wireframe) this.wireframe.visible = visible;
+    if (this.polygonPlanet) this.polygonPlanet.visible = visible;
+    this._statusBadgeGroup.visible = visible && this._statusBadgesVisible;
+
+    for (const entry of this.nodeMeshes) {
+      entry.mesh.visible = visible;
+      entry.glowMesh.visible = visible;
+      if (entry.labelEl) entry.labelEl.style.display = visible ? '' : 'none';
+    }
+    for (const line of this.linkLines) {
+      line.visible = visible;
+    }
+    for (const ring of this._heatmapRings) {
+      ring.visible = visible;
+    }
+  }
+
+  /** Handle pointer move in kanban mode */
+  handleKanbanHover(event: MouseEvent): void {
+    if (!this.kanbanRenderer || this.currentViewMode !== 'kanban') return;
+
+    this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    const nodeId = this.kanbanRenderer.hitTest(this.raycaster);
+    this.kanbanRenderer.highlightCard(nodeId);
+
+    // Change cursor
+    const canvas = this.renderer.domElement;
+    canvas.style.cursor = nodeId ? 'pointer' : 'default';
+  }
+
+  /** Handle click in kanban mode — returns clicked nodeId or null */
+  handleKanbanClick(event: MouseEvent): string | null {
+    if (!this.kanbanRenderer || this.currentViewMode !== 'kanban') return null;
+
+    this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    return this.kanbanRenderer.hitTest(this.raycaster);
   }
 
   // ---------------------------------------------------------------------------

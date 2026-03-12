@@ -57,26 +57,34 @@ function detectStatus(filePath, rootDir, content) {
   // Any segment named 'old' or 'archive' → done
   if (parts.some(p => p.toLowerCase() === 'old' || p.toLowerCase() === 'archive')) return 'done';
 
+  // Any segment named 'hold' → hold
+  if (parts.some(p => p.toLowerCase() === 'hold')) return 'hold';
+
   // Check directory names (look at all segments, not just first)
   const dirParts = parts.slice(0, -1); // exclude filename
 
-  const hasDirNamed = (name) => dirParts.some(p => p.toLowerCase() === name);
+  // Match both exact segment names and symlink-prefixed names
+  // e.g. 'specs' matches, and 'oms-order-specs' also matches (ends with '-specs')
+  const hasDirLike = (name) => dirParts.some(p => {
+    const lp = p.toLowerCase();
+    return lp === name || lp.endsWith('-' + name) || lp.endsWith('_' + name);
+  });
 
   // specs/ with done-status content → done; otherwise → in-progress
-  if (hasDirNamed('specs') || hasDirNamed('spec')) {
+  if (hasDirLike('specs') || hasDirLike('spec')) {
     const donePattern = /^\s*[-*]\s*(?:status|สถานะ)\s*:\s*(?:done|complete|เสร็จ)/im;
     if (donePattern.test(content)) return 'done';
     return 'in-progress';
   }
 
   // tasks/ → in-progress
-  if (hasDirNamed('tasks') || hasDirNamed('task')) return 'in-progress';
+  if (hasDirLike('tasks') || hasDirLike('task')) return 'in-progress';
 
   // docs/ → no status (reference docs)
-  if (hasDirNamed('docs') || hasDirNamed('doc')) return undefined;
+  if (hasDirLike('docs') || hasDirLike('doc')) return undefined;
 
   // discussion/ or discuss/ → planned
-  if (hasDirNamed('discussion') || hasDirNamed('discussions') || hasDirNamed('discuss')) return 'planned';
+  if (hasDirLike('discussion') || hasDirLike('discussions') || hasDirLike('discuss')) return 'planned';
 
   // Everything else → no status
   return undefined;
@@ -254,11 +262,12 @@ const cleanNodes = nodes.map(({ _refs, _basename, ...rest }) => rest);
 const catSet = new Set(cleanNodes.map(n => n.cat));
 
 // Compute status counts
-const statusCounts = { done: 0, 'in-progress': 0, planned: 0 };
+const statusCounts = { done: 0, 'in-progress': 0, planned: 0, hold: 0 };
 for (const n of cleanNodes) {
   if (n.status === 'done') statusCounts.done++;
   else if (n.status === 'in-progress') statusCounts['in-progress']++;
   else if (n.status === 'planned') statusCounts.planned++;
+  else if (n.status === 'hold') statusCounts.hold++;
 }
 
 const crossRepoCount = links.filter(l => l.crossRepo).length;

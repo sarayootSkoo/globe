@@ -3,7 +3,7 @@
   import { loadData } from './lib/stores/graphData';
   import { loadConfig, graphConfig } from './lib/config';
   import { setCategories } from './lib/constants';
-  import { theme, immersiveMode } from './lib/stores/appState';
+  import { theme, immersiveMode, viewMode } from './lib/stores/appState';
 
   // Background
   import Scanline from './components/background/Scanline.svelte';
@@ -19,6 +19,7 @@
   import TopControls from './components/controls/TopControls.svelte';
   import Toolbar from './components/controls/Toolbar.svelte';
   import GlobeControls from './components/controls/GlobeControls.svelte';
+  import MenuPanel from './components/controls/MenuPanel.svelte';
 
   // Panels
   import LegendPanel from './components/panels/LegendPanel.svelte';
@@ -41,6 +42,9 @@
   // Preview
   import PreviewOverlay from './components/preview/PreviewOverlay.svelte';
 
+  // Kanban
+  import KanbanBoard from './components/kanban/KanbanBoard.svelte';
+
   // Keyboard help
   import KeyboardHelp from './components/controls/KeyboardHelp.svelte';
 
@@ -48,11 +52,19 @@
   import KeyboardShortcuts from './components/controls/KeyboardShortcuts.svelte';
 
 
+  import type { ViewMode } from './lib/types';
+
   let loaded = $state(false);
   let wasdPopupVisible = $state(false);
   let crossRepoPanelVisible = $state(false);
   let wasdKeys = $state({ w: false, a: false, s: false, d: false, q: false, shift: false });
   let wasdSpeed = $state(0);
+  let currentView = $state<ViewMode>('globe');
+
+  $effect(() => {
+    const unsub = viewMode.subscribe(v => { currentView = v; });
+    return unsub;
+  });
 
   // Sync theme to document
   $effect(() => {
@@ -106,39 +118,49 @@
 <Corners />
 
 {#if loaded}
-  <!-- 3D Globe -->
-  <GlobeCanvas onwasdupdate={handleWasdUpdate} />
+  <!-- Menu Panel — always visible, controls both views -->
+  <MenuPanel oncrossrepopanel={handleCrossRepoPanel} />
 
-  <!-- Banners -->
-  <TopBanner />
-  <ModeBar />
+  {#if currentView === 'kanban'}
+    <!-- HTML Kanban Board -->
+    <KanbanBoard />
+    <!-- Detail panel for card clicks -->
+    <DetailPanel />
+    <PreviewOverlay />
+  {:else}
+    <!-- 3D Globe -->
+    <GlobeCanvas onwasdupdate={handleWasdUpdate} />
 
-  <!-- Controls -->
-  <TopControls />
-  <GlobeControls onwasdguide={handleWasdGuideOpen} />
-  <Toolbar oncrossrepopanel={handleCrossRepoPanel} />
+    <!-- Banners -->
+    <TopBanner />
+    <ModeBar />
 
-  <!-- Panels -->
-  <LegendPanel />
-  <StatsPanel />
-  <DetailPanel />
-  <PathPanel />
-  <ImpactPanel />
-  <CrossRepoPanel visible={crossRepoPanelVisible} onclose={handleCrossRepoPanelClose} />
+    <!-- Controls -->
+    <TopControls />
+    <GlobeControls onwasdguide={handleWasdGuideOpen} />
 
-  <!-- Search -->
-  <SearchBox />
+    <!-- Panels -->
+    <LegendPanel />
+    <StatsPanel />
+    <DetailPanel />
+    <PathPanel />
+    <ImpactPanel />
+    <CrossRepoPanel visible={crossRepoPanelVisible} onclose={handleCrossRepoPanelClose} />
 
-  <!-- HUD -->
-  <WasdHud keys={wasdKeys} speed={wasdSpeed} />
+    <!-- Search -->
+    <SearchBox />
 
-  <!-- Popups -->
-  <WasdPopup
-    visible={wasdPopupVisible}
-    keys={wasdKeys}
-    onclose={handleWasdGuideClose}
-  />
-  <PreviewOverlay />
+    <!-- HUD -->
+    <WasdHud keys={wasdKeys} speed={wasdSpeed} />
+
+    <!-- Popups -->
+    <WasdPopup
+      visible={wasdPopupVisible}
+      keys={wasdKeys}
+      onclose={handleWasdGuideClose}
+    />
+    <PreviewOverlay />
+  {/if}
 {/if}
 
 <KeyboardHelp />

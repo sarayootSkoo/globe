@@ -1266,7 +1266,7 @@
   .panel {
     position: fixed;
     bottom: 60px;
-    left: 16px;
+    left: 56px;
     z-index: 25;
     background: var(--panel-bg);
     backdrop-filter: blur(14px);

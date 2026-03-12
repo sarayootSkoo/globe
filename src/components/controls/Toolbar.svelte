@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { currentMode, pathSelection, selectedNodeId } from '../../lib/stores/appState';
+  import { currentMode, pathSelection, selectedNodeId, viewMode } from '../../lib/stores/appState';
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
   import { showCrossRepo, crossRepoFilter } from '../../lib/stores/crossRepoState';
   import type { AppMode } from '../../lib/stores/appState';
-  import type { GraphNode, GraphLink } from '../../lib/types';
+  import type { GraphNode, GraphLink, ViewMode } from '../../lib/types';
 
   // ── Props ──────────────────────────────────────────────────────────────────
   interface Props {
@@ -15,9 +15,15 @@
   let nodes = $state<GraphNode[]>([]);
   let links = $state<GraphLink[]>([]);
   let crossRepoPanelOpen = $state(false);
+  let currentView = $state<ViewMode>('globe');
 
   $effect(() => {
     const unsub = currentMode.subscribe(v => { mode = v; });
+    return unsub;
+  });
+
+  $effect(() => {
+    const unsub = viewMode.subscribe(v => { currentView = v; });
     return unsub;
   });
 
@@ -29,6 +35,11 @@
 
   let pathActive = $derived(mode === 'path');
   let impactActive = $derived(mode === 'impact');
+  let kanbanActive = $derived(currentView === 'kanban');
+
+  function handleKanban(): void {
+    viewMode.update(v => v === 'kanban' ? 'globe' : 'kanban');
+  }
 
   function handlePath(): void {
     if (mode === 'path') {
@@ -89,6 +100,14 @@
 <div id="toolbar">
   <button
     class="tool-btn"
+    class:active={kanbanActive}
+    title="Toggle 3D Kanban task board"
+    onclick={handleKanban}
+  >
+    Board
+  </button>
+  <button
+    class="tool-btn"
     class:active={pathActive}
     title="Find shortest path between 2 nodes"
     onclick={handlePath}
@@ -132,7 +151,7 @@
     position: fixed;
     bottom: 16px;
     right: 16px;
-    z-index: 20;
+    z-index: 60;
     display: flex;
     gap: 6px;
   }

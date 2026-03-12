@@ -90,7 +90,7 @@
   #top-controls {
     position: fixed;
     top: 22px;
-    left: 16px;
+    left: 56px;
     z-index: 25;
     display: flex;
     gap: 6px;

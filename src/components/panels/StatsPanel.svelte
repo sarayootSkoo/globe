@@ -108,7 +108,7 @@
   }
   #stats {
     top: 70px;
-    left: 16px;
+    left: 56px;
     min-width: 210px;
   }
   .stat-row {
