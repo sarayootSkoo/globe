@@ -1,6 +1,6 @@
 import { derived, writable, get } from 'svelte/store';
 import { graphNodes } from './graphData';
-import { kanbanDB } from './kanbanDB';
+import { kanbanDB, exportBoardState } from './kanbanDB';
 import type {
   GraphNode, KanbanCard, KanbanStatus, KanbanColumnDef,
   AgentType, CardType, CardLifecycleState, PauseReason,
@@ -519,3 +519,59 @@ export const cardPriorities = derived(kanbanCards, ($cards): Map<string, CardPri
 
   return result;
 });
+
+// ── Board Sync (browser → event-server → .kanban/board.json) ─────────────────
+
+const BOARD_SYNC_URL = 'http://localhost:4010/board';
+const BOARD_SYNC_DEBOUNCE_MS = 5000;
+
+let _syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let _syncUnsubscribe: (() => void) | null = null;
+
+/**
+ * Serialise the current board state and POST it to the local event server.
+ * Fails silently if the server is not running — this is best-effort sync.
+ */
+export async function syncBoardToServer(): Promise<void> {
+  const payload = exportBoardState();
+  try {
+    await fetch(BOARD_SYNC_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+    });
+  } catch {
+    // Event server not running — ignore
+  }
+}
+
+/**
+ * Start watching `kanbanCards` for changes and syncing to the event server
+ * with a 5-second debounce. Safe to call multiple times — only one
+ * subscription is kept.
+ */
+export function startBoardSync(): void {
+  if (_syncUnsubscribe !== null) return; // already running
+
+  _syncUnsubscribe = kanbanCards.subscribe(() => {
+    if (_syncDebounceTimer !== null) clearTimeout(_syncDebounceTimer);
+    _syncDebounceTimer = setTimeout(() => {
+      _syncDebounceTimer = null;
+      syncBoardToServer();
+    }, BOARD_SYNC_DEBOUNCE_MS);
+  });
+}
+
+/**
+ * Stop the board sync subscription and cancel any pending debounced write.
+ */
+export function stopBoardSync(): void {
+  if (_syncDebounceTimer !== null) {
+    clearTimeout(_syncDebounceTimer);
+    _syncDebounceTimer = null;
+  }
+  if (_syncUnsubscribe !== null) {
+    _syncUnsubscribe();
+    _syncUnsubscribe = null;
+  }
+}

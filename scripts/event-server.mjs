@@ -5,8 +5,19 @@
  */
 
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
+
+// ── Paths ─────────────────────────────────────────────────────────────────────
+
+// Resolve .kanban/board.json relative to the project root (one directory up
+// from the scripts/ folder where this file lives).
+const BOARD_PATH = path.resolve(
+  path.dirname(new URL(import.meta.url).pathname),
+  '../.kanban/board.json'
+);
 
 // ── In-memory state ──────────────────────────────────────────────────────────
 
@@ -408,6 +419,28 @@ async function handleRequest(req, res) {
     });
 
     send(res, 200, { sessionId, pid: child.pid }, cors);
+    return;
+  }
+
+  // ── POST /board ──────────────────────────────────────────────────────────
+  if (req.method === 'POST' && path === '/board') {
+    let body;
+    try { body = await readBody(req); }
+    catch {
+      send(res, 400, { error: 'Invalid JSON' }, cors);
+      return;
+    }
+
+    try {
+      fs.mkdirSync(path.dirname(BOARD_PATH), { recursive: true });
+      fs.writeFileSync(BOARD_PATH, JSON.stringify(body, null, 2), 'utf8');
+    } catch (err) {
+      send(res, 500, { error: `Failed to write board: ${err.message}` }, cors);
+      return;
+    }
+
+    broadcast({ type: 'board:updated', timestamp: new Date().toISOString() });
+    send(res, 200, { success: true }, cors);
     return;
   }
 

@@ -164,6 +164,34 @@ function getStorageUsage(): { bytes: number; formatted: string; warning: boolean
 
 // ── Public export ─────────────────────────────────────────────────────────────
 
+// ── Board Export ──────────────────────────────────────────────────────────────
+
+/**
+ * Serialise the entire board state from localStorage into a JSON string.
+ * Intended to be POSTed to the local event-server so it can write
+ * `.kanban/board.json` for the MCP server to read.
+ */
+export function exportBoardState(): string {
+  const cards     = get('cards',        {});
+  const lifecycle = get('lifecycle',     {});
+  const agents    = get('agents',        {});
+  const workflows = get('workflows',     {});
+  const moves     = get('moves',         {});
+  const iterations  = get('iterations',  {});
+  const dependencies = get('dependencies', {});
+
+  return JSON.stringify({
+    cards,
+    lifecycle,
+    agents,
+    workflows,
+    moves,
+    iterations,
+    dependencies,
+    exportedAt: Date.now(),
+  }, null, 2);
+}
+
 export const kanbanDB = {
   // Generic access
   get,
