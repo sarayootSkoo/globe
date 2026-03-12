@@ -2,3 +2,7 @@ node_modules/
 dist/
 dist/*
 **/CLAUDE.md
+
+# IPC Bridge runtime files
+.kanban/*.json
+.kanban/*.jsonl

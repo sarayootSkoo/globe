@@ -130,14 +130,29 @@
     if (dragNodeId) {
       // Find the card being dragged
       const card = cards.find(c => c.node.id === dragNodeId);
-      if (card && card.lifecycle === 'idle') {
-        // Card hasn't been started — show StartDialog
-        const fromCol = KANBAN_COLUMNS.find(c => c.id === card.status)?.label || card.status;
-        const toCol = KANBAN_COLUMNS.find(c => c.id === colId)?.label || colId;
-        pendingDrop = { nodeId: dragNodeId, targetCol: colId };
-        startDialogCard = { card, from: fromCol, to: toCol };
-      } else {
-        moveCard(dragNodeId, colId);
+      if (card) {
+        // Block move when card is actively running
+        if (card.lifecycle === 'running') {
+          dragNodeId = null;
+          return; // Cannot move a card that is currently running
+        }
+
+        // Block move when card is blocked by a dependency
+        if (card.lifecycle === 'blocked') {
+          dragNodeId = null;
+          return; // Cannot move a card that is blocked
+        }
+
+        if (card.lifecycle === 'idle') {
+          // Card hasn't been started yet — prompt via StartDialog before moving
+          const fromCol = KANBAN_COLUMNS.find(c => c.id === card.status)?.label || card.status;
+          const toCol = KANBAN_COLUMNS.find(c => c.id === colId)?.label || colId;
+          pendingDrop = { nodeId: dragNodeId, targetCol: colId };
+          startDialogCard = { card, from: fromCol, to: toCol };
+        } else {
+          // started / paused / completed / failed — allow move freely
+          moveCard(dragNodeId, colId);
+        }
       }
       dragNodeId = null;
     }

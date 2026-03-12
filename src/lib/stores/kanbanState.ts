@@ -3,6 +3,7 @@ import { graphNodes } from './graphData';
 import type {
   GraphNode, KanbanCard, KanbanStatus, KanbanColumnDef,
   AgentType, CardType, CardLifecycleState, PauseReason,
+  AgentSuggestion, CardPriority,
 } from '../types';
 
 // ── SDLC Pipeline Columns ────────────────────────────────────────────────────
@@ -297,4 +298,111 @@ export const kanbanColumns = derived(kanbanCards, ($cards) => {
     grouped.get(card.status)?.push(card);
   }
   return grouped;
+});
+
+// ── agentSuggestions ─────────────────────────────────────────────────────────
+//
+// For each card that has no agent assigned, compute suggested agents based on:
+//   1. Which agents are valid for the card's current column (AGENT_SUGGEST_RULES)
+//   2. Card type bias (spec → chore/feature first, task → implement, issue → issue)
+//
+// Returns Map<nodeId, AgentSuggestion[]> — empty array when card already has agent.
+
+const CARD_TYPE_PREFERRED: Record<CardType, AgentType[]> = {
+  spec:       ['chore', 'feature'],
+  task:       ['implement'],
+  issue:      ['issue'],
+  discussion: ['discussion', 'breakdown'],
+};
+
+export const agentSuggestions = derived(kanbanCards, ($cards): Map<string, AgentSuggestion[]> => {
+  const result = new Map<string, AgentSuggestion[]>();
+
+  for (const card of $cards) {
+    // Skip cards that already have an agent assigned
+    if (card.agent) {
+      result.set(card.node.id, []);
+      continue;
+    }
+
+    const columnAgents: AgentType[] = AGENT_SUGGEST_RULES[card.status] ?? [];
+    const preferred: AgentType[]    = CARD_TYPE_PREFERRED[card.type]   ?? [];
+
+    const suggestions: AgentSuggestion[] = columnAgents.map((agentKey) => {
+      const def      = AGENT_DEFS[agentKey as string];
+      const isPref   = preferred.includes(agentKey);
+      const priority = isPref ? 10 : 5;
+      const note     = isPref
+        ? `Recommended for ${card.type} cards`
+        : `Valid for ${card.status} column`;
+
+      return {
+        agent:    agentKey as string,
+        command:  def?.command ?? `/${agentKey}`,
+        priority,
+        note,
+      };
+    });
+
+    // Sort highest priority first
+    suggestions.sort((a, b) => b.priority - a.priority);
+    result.set(card.node.id, suggestions);
+  }
+
+  return result;
+});
+
+// ── cardPriorities ────────────────────────────────────────────────────────────
+//
+// For each card, compute a priority score (0-100) made up of:
+//   Base weight by card type  : issue=40, spec=30, task=20, discussion=10
+//   Has agent assigned        : +20
+//   Connection count          : +10 per connection, capped at +30
+//   Low iteration score (<3)  : +10
+//
+// Returns Map<nodeId, { score, reasons }>
+
+const TYPE_BASE_SCORE: Record<CardType, number> = {
+  issue:      40,
+  spec:       30,
+  task:       20,
+  discussion: 10,
+};
+
+export const cardPriorities = derived(kanbanCards, ($cards): Map<string, CardPriority> => {
+  const result = new Map<string, CardPriority>();
+
+  for (const card of $cards) {
+    let score  = 0;
+    const reasons: string[] = [];
+
+    // Base score from card type
+    const typeBase = TYPE_BASE_SCORE[card.type] ?? 10;
+    score += typeBase;
+    reasons.push(`${card.type} card (+${typeBase})`);
+
+    // Agent assigned bonus
+    if (card.agent) {
+      score += 20;
+      reasons.push('agent assigned (+20)');
+    }
+
+    // Connection count bonus (capped at +30, i.e. max 3 connections counted)
+    const connectionCount = card.node.connections?.length ?? 0;
+    if (connectionCount > 0) {
+      const connBonus = Math.min(connectionCount * 10, 30);
+      score += connBonus;
+      reasons.push(`${connectionCount} connection${connectionCount === 1 ? '' : 's'} (+${connBonus})`);
+    }
+
+    // Low iteration score bonus
+    if (card.iterationScore > 0 && card.iterationScore < 3) {
+      score += 10;
+      reasons.push('low iteration score (+10)');
+    }
+
+    result.set(card.node.id, { score: Math.min(score, 100), reasons });
+  }
+
+  return result;
 });
