@@ -3,6 +3,7 @@
   import {
     KANBAN_COLUMNS, AGENT_DEFS,
     kanbanCards, kanbanColumns,
+    agentSuggestions, cardPriorities,
     assignAgent, moveCard,
     updateLifecycle,
   } from '../../lib/stores/kanbanState';
@@ -15,6 +16,8 @@
   import NewCardDialog from './NewCardDialog.svelte';
   import CardPreview from './CardPreview.svelte';
   import CommandPanel from './CommandPanel.svelte';
+  import AgentSuggestBadge from './AgentSuggestBadge.svelte';
+  import CardPriorityBadge from './CardPriority.svelte';
   import { toggleCommandPanel, queueCommand, markCopied } from '../../lib/stores/commandState';
 
   let columns = $state(new Map<KanbanStatus, KanbanCard[]>());
@@ -25,6 +28,8 @@
   let filterType = $state('');
   let filterCat = $state('');
   let searchText = $state('');
+  let sortByPriority = $state(false);
+  let priorities = $state(new Map<string, import('../../lib/types').CardPriority>());
 
   // Dialog states
   let showNewCard = $state(false);
@@ -43,6 +48,11 @@
 
   $effect(() => {
     const unsub = kanbanCards.subscribe(v => { cards = v; });
+    return unsub;
+  });
+
+  $effect(() => {
+    const unsub = cardPriorities.subscribe(v => { priorities = v; });
     return unsub;
   });
 
@@ -89,7 +99,7 @@
 
   function filteredCards(status: KanbanStatus): KanbanCard[] {
     const col = columns.get(status) || [];
-    return col.filter(c => {
+    const filtered = col.filter(c => {
       if (filterType && c.type !== filterType) return false;
       if (filterCat && c.node.cat !== filterCat) return false;
       if (searchText) {
@@ -100,6 +110,14 @@
       }
       return true;
     });
+    if (sortByPriority) {
+      filtered.sort((a, b) => {
+        const scoreA = priorities.get(a.node.id)?.score ?? 0;
+        const scoreB = priorities.get(b.node.id)?.score ?? 0;
+        return scoreB - scoreA;
+      });
+    }
+    return filtered;
   }
 
   // Total cards with status
@@ -277,6 +295,14 @@
           <option value={t}>{TYPE_ICONS[t] || ''} {t.toUpperCase()}</option>
         {/each}
       </select>
+      <button
+        class="sort-toggle"
+        class:sort-active={sortByPriority}
+        onclick={() => sortByPriority = !sortByPriority}
+        title={sortByPriority ? 'Sorting by priority score (descending)' : 'Click to sort by priority'}
+      >
+        &#x21F5; {sortByPriority ? 'Priority' : 'Name'}
+      </button>
       <button class="cmd-toggle" onclick={toggleCommandPanel}>CMD</button>
     </div>
   </div>
@@ -322,7 +348,10 @@
               <!-- Title row + priority badge -->
               <div class="card-title-row">
                 <div class="card-title">{card.node.label}</div>
-                <span class="card-pri {pri.cls}">{pri.label}</span>
+                <div class="card-pri-group">
+                  <CardPriorityBadge nodeId={card.node.id} />
+                  <span class="card-pri {pri.cls}">{pri.label}</span>
+                </div>
               </div>
 
               <!-- Agent -->
@@ -333,6 +362,12 @@
                 {:else}
                   <span class="agent-dot-sm unassigned"></span>
                   <span class="agent-name unassigned">Assign agent</span>
+                  <span class="agent-suggest-wrap">
+                    <AgentSuggestBadge
+                      nodeId={card.node.id}
+                      onAccept={(agent) => { agentMenuNodeId = null; }}
+                    />
+                  </span>
                 {/if}
               </div>
 
@@ -929,5 +964,44 @@
   }
   .iter-score.score-good {
     color: #00e5ff;
+  }
+
+  /* ── Sort toggle ─────────────────────────────────────────────────────────── */
+  .sort-toggle {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 5px;
+    padding: 5px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #666;
+    font-family: inherit;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .sort-toggle:hover {
+    color: #eab308;
+    border-color: rgba(234,179,8,0.3);
+  }
+  .sort-toggle.sort-active {
+    color: #eab308;
+    border-color: rgba(234,179,8,0.4);
+    background: rgba(234,179,8,0.08);
+  }
+
+  /* ── Card priority group (score chip + type badge together) ─────────────── */
+  .card-pri-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+
+  /* ── Agent suggest wrapper (inline in agent row) ────────────────────────── */
+  .agent-suggest-wrap {
+    margin-left: auto;
+    flex-shrink: 0;
   }
 </style>
