@@ -4,6 +4,7 @@
   import { addLocalCard, updateLifecycle } from '../../lib/stores/kanbanState';
   import { WORKFLOW_CHAINS } from '../../lib/workflow/workflowEngine';
   import { buildCommandString, COMMAND_REGISTRY } from '../../lib/workflow/commandRegistry';
+  import FileDropZone from './FileDropZone.svelte';
 
   interface Props {
     onClose: () => void;
@@ -40,28 +41,8 @@
     { value: 'issue',      icon: '\u{1F41B}', label: 'Issue' },
   ];
 
-  function handleDrop(e: DragEvent) {
-    e.preventDefault();
-    if (e.dataTransfer?.files) {
-      files = [...files, ...Array.from(e.dataTransfer.files)];
-    }
-  }
-
-  function handleFileInput(e: Event) {
-    const input = e.target as HTMLInputElement;
-    if (input.files) {
-      files = [...files, ...Array.from(input.files)];
-    }
-  }
-
-  function removeFile(idx: number) {
-    files = files.filter((_, i) => i !== idx);
-  }
-
-  function formatSize(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  function handleFiles(incoming: File[]) {
+    files = incoming;
   }
 
   function createCard(andStart: boolean) {
@@ -153,31 +134,7 @@
     <!-- File Drop Zone -->
     <div class="field">
       <label class="field-label">Attachments</label>
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="drop-zone"
-        ondragover={(e) => e.preventDefault()}
-        ondrop={handleDrop}
-      >
-        <div class="drop-text">Drag and drop files here</div>
-        <div class="drop-or">or</div>
-        <label class="browse-btn">
-          Browse for files
-          <input type="file" multiple onchange={handleFileInput} style="display:none" />
-        </label>
-      </div>
-
-      {#if files.length > 0}
-        <div class="file-list">
-          {#each files as file, idx}
-            <div class="file-item">
-              <span class="file-name">{file.name}</span>
-              <span class="file-size">{formatSize(file.size)}</span>
-              <button class="file-remove" onclick={() => removeFile(idx)}>x</button>
-            </div>
-          {/each}
-        </div>
-      {/if}
+      <FileDropZone onFiles={handleFiles} />
 
       {#if uploadPath}
         <div class="upload-path">Files will be saved to: {uploadPath}</div>
@@ -226,33 +183,6 @@
   .type-option:hover { background: rgba(255,255,255,0.04); }
   .type-option.selected { background: rgba(0,229,255,0.08); border-color: rgba(0,229,255,0.3); color: #00e5ff; }
   .type-option input { display: none; }
-
-  .drop-zone {
-    border: 2px dashed rgba(255,255,255,0.1); border-radius: 8px; padding: 24px;
-    text-align: center; transition: all 0.15s;
-  }
-  .drop-zone:hover { border-color: rgba(0,229,255,0.3); background: rgba(0,229,255,0.02); }
-  .drop-text { font-size: 12px; color: #666; margin-bottom: 8px; }
-  .drop-or { font-size: 10px; color: #444; margin-bottom: 8px; }
-  .browse-btn {
-    display: inline-block; padding: 6px 16px; border-radius: 6px; cursor: pointer;
-    font-size: 11px; color: #00e5ff; background: rgba(0,229,255,0.08);
-    border: 1px solid rgba(0,229,255,0.2);
-  }
-  .browse-btn:hover { background: rgba(0,229,255,0.15); }
-
-  .file-list { margin-top: 10px; }
-  .file-item {
-    display: flex; align-items: center; gap: 10px; padding: 6px 10px; margin: 4px 0;
-    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;
-  }
-  .file-name { flex: 1; font-size: 11px; color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .file-size { font-size: 10px; color: #666; flex-shrink: 0; }
-  .file-remove {
-    background: none; border: none; color: #ff5555; cursor: pointer; font-size: 12px;
-    padding: 2px 6px; border-radius: 4px;
-  }
-  .file-remove:hover { background: rgba(255,85,85,0.1); }
 
   .upload-path { margin-top: 8px; font-size: 10px; color: #666; font-style: italic; }
 

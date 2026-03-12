@@ -3,6 +3,10 @@ dist/
 dist/*
 **/CLAUDE.md
 
-# IPC Bridge runtime files
-.kanban/*.json
-.kanban/*.jsonl
+# Kanban File IPC (Sprint 1.5)
+.kanban/*
+!.kanban/.gitkeep
+
+# File uploads from Kanban UI
+uploads/*
+!uploads/.gitkeep

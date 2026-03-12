@@ -2,6 +2,7 @@
   import type { KanbanCard } from '../../lib/types';
   import { COMMAND_REGISTRY, getCommandsForColumn, buildCommandString } from '../../lib/workflow/commandRegistry';
   import { AGENT_DEFS } from '../../lib/stores/kanbanState';
+  import WorkflowHistory from './WorkflowHistory.svelte';
 
   interface Props {
     card: KanbanCard;
@@ -142,6 +143,12 @@
           {#if card.pauseReason}
             <div class="pause-reason">{card.pauseReason.replace('_', ' ')}</div>
           {/if}
+        </div>
+
+        <!-- Workflow History -->
+        <div class="sidebar-section">
+          <div class="section-label">WORKFLOW</div>
+          <WorkflowHistory cardId={card.node.id} />
         </div>
 
         <!-- Re-run Commands -->

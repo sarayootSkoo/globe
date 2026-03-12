@@ -56,47 +56,47 @@
     return text.length > max ? text.slice(0, max) + '…' : text;
   }
 
-  const state = $derived(status?.state ?? 'idle');
+  const agentState = $derived(status?.state ?? 'idle');
 </script>
 
-<div class="agent-status" data-state={state}>
+<div class="agent-status" data-state={agentState}>
   <!-- Status dot / icon -->
   <span class="dot-wrap">
-    {#if state === 'idle'}
+    {#if agentState === 'idle'}
       <span class="dot dot-idle" title="Idle"></span>
-    {:else if state === 'working'}
+    {:else if agentState === 'working'}
       <span class="dot dot-working pulse" title="Working">
         <span class="spinner"></span>
       </span>
-    {:else if state === 'done'}
+    {:else if agentState === 'done'}
       <span class="dot dot-done" title="Done">&#10003;</span>
-    {:else if state === 'error'}
+    {:else if agentState === 'error'}
       <span class="dot dot-error" title="Error">&#10007;</span>
     {/if}
   </span>
 
   <!-- Label -->
   <span class="status-label">
-    {#if state === 'idle'}
+    {#if agentState === 'idle'}
       <span class="text-idle">Idle</span>
-    {:else if state === 'working'}
+    {:else if agentState === 'working'}
       <span class="text-working">Working...</span>
-    {:else if state === 'done'}
+    {:else if agentState === 'done'}
       <span class="text-done">Done</span>
-    {:else if state === 'error'}
+    {:else if agentState === 'error'}
       <span class="text-error">Error</span>
     {/if}
   </span>
 
   <!-- Last action (truncated) -->
-  {#if status?.lastAction && state !== 'idle'}
+  {#if status?.lastAction && agentState !== 'idle'}
     <span class="last-action" title={status.lastAction}>
       {truncate(status.lastAction, 30)}
     </span>
   {/if}
 
   <!-- Live duration while working -->
-  {#if state === 'working' && elapsed > 0}
+  {#if agentState === 'working' && elapsed > 0}
     <span class="duration">{formatDuration(elapsed)}</span>
   {/if}
 </div>

@@ -3,6 +3,7 @@
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
   import { showCrossRepo, crossRepoFilter } from '../../lib/stores/crossRepoState';
   import { toggleCommandPanel } from '../../lib/stores/commandState';
+  import { startPolling, stopPolling } from '../../lib/stores/ipcBridge';
   import type { AppMode } from '../../lib/stores/appState';
   import type { GraphNode, GraphLink, ViewMode } from '../../lib/types';
 
@@ -18,6 +19,8 @@
   let crossRepoPanelOpen = $state(false);
   let hoveredItem = $state<string | null>(null);
   let openPanel = $state<string | null>(null);
+  let showSuggestions = $state(false);
+  let ipcPolling = $state(false);
 
   $effect(() => {
     const unsub = currentMode.subscribe(v => { mode = v; });
@@ -193,12 +196,12 @@
       </svg>
       {#if hoveredItem === 'cmd'}<span class="tip">Commands</span>{/if}
     </button>
-    <button class="rail-btn disabled" disabled
+    <button class="rail-btn" class:active={showSuggestions} onclick={() => showSuggestions = !showSuggestions}
       onmouseenter={() => hoveredItem = 'ai'} onmouseleave={() => hoveredItem = null}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M12 2a7 7 0 0 1 7 7c0 2.5-1.5 4.5-3 6h-8c-1.5-1.5-3-3.5-3-6a7 7 0 0 1 7-7z"/><path d="M9 21h6"/><path d="M10 17h4"/>
       </svg>
-      {#if hoveredItem === 'ai'}<span class="tip">AI Suggest <small>S1</small></span>{/if}
+      {#if hoveredItem === 'ai'}<span class="tip">AI Suggest</span>{/if}
     </button>
     <button class="rail-btn disabled" disabled
       onmouseenter={() => hoveredItem = 'run'} onmouseleave={() => hoveredItem = null}>
@@ -207,12 +210,12 @@
       </svg>
       {#if hoveredItem === 'run'}<span class="tip">Run Agent <small>S3</small></span>{/if}
     </button>
-    <button class="rail-btn disabled" disabled
+    <button class="rail-btn" class:active={ipcPolling} onclick={() => { ipcPolling = !ipcPolling; ipcPolling ? startPolling() : stopPolling(); }}
       onmouseenter={() => hoveredItem = 'live'} onmouseleave={() => hoveredItem = null}>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <circle cx="12" cy="12" r="3"/><path d="M8 8a6 6 0 0 0 0 8"/><path d="M16 8a6 6 0 0 1 0 8"/>
       </svg>
-      {#if hoveredItem === 'live'}<span class="tip">Live Status <small>S2</small></span>{/if}
+      {#if hoveredItem === 'live'}<span class="tip">Live Status</span>{/if}
     </button>
   {/if}
 

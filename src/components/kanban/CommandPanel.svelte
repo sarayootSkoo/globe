@@ -2,8 +2,11 @@
   import {
     commandPanelOpen, activeCommands, commandHistory,
     clearHistory, toggleCommandPanel, markCompleted,
+    queueCommand, markCopied,
   } from '../../lib/stores/commandState';
   import type { QueuedCommand } from '../../lib/stores/commandState';
+  import { COMMAND_REGISTRY, getCommandsForColumn } from '../../lib/workflow/commandRegistry';
+  import { AGENT_DEFS } from '../../lib/stores/kanbanState';
 
   let isOpen = $state(false);
   let active = $state<QueuedCommand[]>([]);
@@ -23,6 +26,13 @@
     if (m < 60) return `${m}m`;
     const h = Math.floor(m / 60);
     return `${h}h`;
+  }
+
+  function queueAndCopy(command: string) {
+    const args = '';
+    const entry = queueCommand(command, args, null);
+    markCopied(entry.id);
+    navigator.clipboard.writeText(command);
   }
 
   const STATUS_ICONS: Record<string, string> = {
@@ -90,6 +100,23 @@
       {:else}
         <div class="empty-history">No command history</div>
       {/if}
+    </div>
+
+    <!-- Quick Commands -->
+    <div class="section">
+      <div class="section-label">QUICK COMMANDS</div>
+      <div class="quick-grid">
+        {#each ['/chore', '/implement', '/test', '/review', '/validate', '/docs'] as cmd}
+          {@const def = COMMAND_REGISTRY[cmd]}
+          {@const agent = def ? AGENT_DEFS[def.agent] : null}
+          <button class="quick-btn" onclick={() => queueAndCopy(cmd)} title={def?.description || cmd}>
+            {#if agent}
+              <span class="quick-dot" style="background: {agent.color}"></span>
+            {/if}
+            <span class="quick-label">{cmd.slice(1)}</span>
+          </button>
+        {/each}
+      </div>
     </div>
   </div>
 {/if}
@@ -213,5 +240,40 @@
     color: #444;
     font-style: italic;
     padding: 12px 16px;
+  }
+
+  .quick-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 4px;
+  }
+  .quick-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 5px;
+    color: #888;
+    font-size: 10px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .quick-btn:hover {
+    background: rgba(0,229,255,0.06);
+    border-color: rgba(0,229,255,0.15);
+    color: #00e5ff;
+  }
+  .quick-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .quick-label {
+    font-weight: 600;
+    letter-spacing: 0.03em;
   }
 </style>

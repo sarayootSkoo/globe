@@ -172,6 +172,9 @@ export interface KanbanCard {
   artifactPath?: string | null;
   // Local-only card (created via UI, not from graph node)
   isLocal?: boolean;
+  // Dependencies
+  blockedBy?: string[];   // IDs of cards that must complete before this one
+  blocking?: string[];    // IDs of cards that this card is blocking
 }
 
 export interface KanbanColumnDef {

@@ -44,6 +44,7 @@
 
   // Kanban
   import KanbanBoard from './components/kanban/KanbanBoard.svelte';
+  import IPCStatus from './components/kanban/IPCStatus.svelte';
 
   // Keyboard help
   import KeyboardHelp from './components/controls/KeyboardHelp.svelte';
@@ -127,6 +128,8 @@
     <!-- Detail panel for card clicks -->
     <DetailPanel />
     <PreviewOverlay />
+    <!-- IPC connection status indicator (bottom-right, fixed) -->
+    <IPCStatus />
   {:else}
     <!-- 3D Globe -->
     <GlobeCanvas onwasdupdate={handleWasdUpdate} />

@@ -1,3 +1,9 @@
+// TODO: KanbanRenderer — 3D Kanban visualization (Sprint 3)
+// This renderer creates Three.js objects for kanban columns and cards.
+// Not yet integrated into GlobeCanvas/GlobeRenderer.
+// Integration plan: Add kanban view mode to GlobeCanvas that switches
+// between globe visualization and 3D kanban board.
+
 /**
  * KanbanRenderer — renders Kanban columns + cards in Three.js scene.
  *
@@ -151,7 +157,9 @@ function createCardTexture(card: KanbanCard, catColor: string): THREE.CanvasText
 
   // Status dot (bottom-right)
   const statusColors: Record<KanbanStatus, string> = {
-    backlog: '#888', planned: '#4d8aff', done: '#00ff88', hold: '#ffcc00',
+    backlog: '#888', create: '#4d8aff', done: '#00ff88', hold: '#ffcc00',
+    design: '#a855f7', task: '#f97316', issue: '#ef4444',
+    develop: '#3b82f6', testing: '#eab308', validate: '#06b6d4', 'update-docs': '#10b981',
   };
   ctx.fillStyle = statusColors[card.status];
   ctx.beginPath();

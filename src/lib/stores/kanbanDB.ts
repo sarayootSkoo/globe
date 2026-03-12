@@ -11,16 +11,17 @@
 // ── Storage Keys ─────────────────────────────────────────────────────────────
 
 export const DB_KEYS = {
-  agents:     'kg-kanban-agents',
-  moves:      'kg-kanban-moves',
-  cards:      'kg-kanban-local-cards',
-  lifecycle:  'kg-kanban-lifecycle',
-  iterations: 'kg-kanban-iterations',
-  workflows:  'kg-kanban-workflows',
-  commands:   'kg-kanban-command-queue',
-  sessions:   'kg-kanban-sessions',
-  history:    'kg-kanban-history',
-  settings:   'kg-kanban-settings',
+  agents:       'kg-kanban-agents',
+  moves:        'kg-kanban-moves',
+  cards:        'kg-kanban-local-cards',
+  lifecycle:    'kg-kanban-lifecycle',
+  iterations:   'kg-kanban-iterations',
+  workflows:    'kg-kanban-workflows',
+  commands:     'kg-kanban-command-queue',
+  sessions:     'kg-kanban-sessions',
+  history:      'kg-kanban-history',
+  settings:     'kg-kanban-settings',
+  dependencies: 'kg-kanban-dependencies',
 } as const;
 
 export type DBTable = keyof typeof DB_KEYS;
@@ -112,7 +113,7 @@ function cleanup(): void {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.startsWith('kg-kanban-') && !validKeys.has(k)) {
+      if (k && k.startsWith('kg-kanban-') && !(validKeys as Set<string>).has(k)) {
         toRemove.push(k);
       }
     }
@@ -138,6 +139,29 @@ function makeAccessor<T>(table: DBTable) {
   };
 }
 
+// ── Storage monitoring ──────────────────────────────────────────────────────
+
+/** Returns total bytes used by kg-kanban-* keys and a warning if over 1.5MB */
+function getStorageUsage(): { bytes: number; formatted: string; warning: boolean } {
+  let total = 0;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('kg-kanban-')) {
+        const v = localStorage.getItem(k);
+        if (v) total += k.length + v.length;
+      }
+    }
+  } catch {
+    // Ignore storage errors
+  }
+  const bytes = total * 2; // UTF-16 chars = 2 bytes each
+  const kb = bytes / 1024;
+  const formatted = kb < 1024 ? `${kb.toFixed(1)} KB` : `${(kb / 1024).toFixed(2)} MB`;
+  const warning = bytes > 1.5 * 1024 * 1024; // warn at 1.5MB
+  return { bytes, formatted, warning };
+}
+
 // ── Public export ─────────────────────────────────────────────────────────────
 
 export const kanbanDB = {
@@ -146,6 +170,7 @@ export const kanbanDB = {
   set,
   del,
   cleanup,
+  getStorageUsage,
 
   // Per-table typed helpers
   cards:      makeAccessor<Record<string, unknown>>('cards'),
@@ -154,10 +179,11 @@ export const kanbanDB = {
   sessions:   makeAccessor<Record<string, unknown>>('sessions'),
   history:    makeAccessor<unknown[]>('history'),
   settings:   makeAccessor<Record<string, unknown>>('settings'),
-  agents:     makeAccessor<Record<string, string>>('agents'),
-  moves:      makeAccessor<Record<string, string>>('moves'),
-  lifecycle:  makeAccessor<Record<string, unknown>>('lifecycle'),
-  iterations: makeAccessor<Record<string, unknown>>('iterations'),
+  agents:       makeAccessor<Record<string, string>>('agents'),
+  moves:        makeAccessor<Record<string, string>>('moves'),
+  lifecycle:    makeAccessor<Record<string, unknown>>('lifecycle'),
+  iterations:   makeAccessor<Record<string, unknown>>('iterations'),
+  dependencies: makeAccessor<Record<string, string[]>>('dependencies'),
 };
 
 export default kanbanDB;

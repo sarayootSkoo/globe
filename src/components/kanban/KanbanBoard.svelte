@@ -3,7 +3,7 @@
   import {
     KANBAN_COLUMNS, AGENT_DEFS,
     kanbanCards, kanbanColumns,
-    agentSuggestions, cardPriorities,
+    cardPriorities,
     assignAgent, moveCard,
     updateLifecycle,
   } from '../../lib/stores/kanbanState';
@@ -18,7 +18,11 @@
   import CommandPanel from './CommandPanel.svelte';
   import AgentSuggestBadge from './AgentSuggestBadge.svelte';
   import CardPriorityBadge from './CardPriority.svelte';
+  import DependencyBadge from './DependencyBadge.svelte';
+  import AgentStatusIndicator from './AgentStatusIndicator.svelte';
+  import AgentActionButton from './AgentActionButton.svelte';
   import { toggleCommandPanel, queueCommand, markCopied } from '../../lib/stores/commandState';
+  import { connectEventServer, disconnectEventServer } from '../../lib/stores/agentEventStore';
 
   let columns = $state(new Map<KanbanStatus, KanbanCard[]>());
   let cards = $state<KanbanCard[]>([]);
@@ -54,6 +58,12 @@
   $effect(() => {
     const unsub = cardPriorities.subscribe(v => { priorities = v; });
     return unsub;
+  });
+
+  // Connect to agent event WebSocket on mount; disconnect on destroy
+  $effect(() => {
+    connectEventServer();
+    return () => disconnectEventServer();
   });
 
   // Unique categories and types from cards
@@ -150,19 +160,20 @@
       const card = cards.find(c => c.node.id === dragNodeId);
       if (card) {
         // Block move when card is actively running
-        if (card.lifecycle === 'running') {
+        if (card.lifecycle === 'running' && !e.shiftKey) {
           dragNodeId = null;
           return; // Cannot move a card that is currently running
         }
 
         // Block move when card is blocked by a dependency
-        if (card.lifecycle === 'blocked') {
+        if (card.lifecycle === 'blocked' && !e.shiftKey) {
           dragNodeId = null;
           return; // Cannot move a card that is blocked
         }
 
-        if (card.lifecycle === 'idle') {
+        if (card.lifecycle === 'idle' && !e.shiftKey) {
           // Card hasn't been started yet — prompt via StartDialog before moving
+          // (Hold Shift to bypass)
           const fromCol = KANBAN_COLUMNS.find(c => c.id === card.status)?.label || card.status;
           const toCol = KANBAN_COLUMNS.find(c => c.id === colId)?.label || colId;
           pendingDrop = { nodeId: dragNodeId, targetCol: colId };
@@ -359,6 +370,9 @@
                 {#if card.agent && AGENT_DEFS[card.agent]}
                   <span class="agent-dot-sm" style="background: {AGENT_DEFS[card.agent].color}"></span>
                   <span class="agent-name">{AGENT_DEFS[card.agent].label}</span>
+                  <span class="agent-status-wrap" onclick={(e) => e.stopPropagation()}>
+                    <AgentStatusIndicator nodeId={card.node.id} />
+                  </span>
                 {:else}
                   <span class="agent-dot-sm unassigned"></span>
                   <span class="agent-name unassigned">Assign agent</span>
@@ -381,6 +395,15 @@
                   {card.lifecycle}
                 </button>
               </div>
+
+              <!-- Dependency badges -->
+              {#if (card.blockedBy && card.blockedBy.length > 0) || (card.blocking && card.blocking.length > 0)}
+                <DependencyBadge
+                  cardId={card.node.id}
+                  blockedBy={card.blockedBy ?? []}
+                  blocking={card.blocking ?? []}
+                />
+              {/if}
 
               <!-- Iteration badge -->
               {#if card.iterationCount > 0}
@@ -418,6 +441,16 @@
 
               <!-- Timestamp / status -->
               <div class="card-time">{card.node.status || card.type}</div>
+
+              <!-- Agent action button (visible when agent assigned + artifact exists) -->
+              {#if card.agent && card.artifactPath && AGENT_DEFS[card.agent]}
+                <div class="card-action-footer" onclick={(e) => e.stopPropagation()}>
+                  <AgentActionButton
+                    card={card}
+                    command={AGENT_DEFS[card.agent].command}
+                  />
+                </div>
+              {/if}
 
               <!-- Agent dropdown -->
               {#if agentMenuNodeId === card.node.id}
@@ -1003,5 +1036,16 @@
   .agent-suggest-wrap {
     margin-left: auto;
     flex-shrink: 0;
+  }
+
+  /* ── Agent status wrapper (inline in agent row, right side) ──────────────── */
+  .agent-status-wrap {
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  /* ── Agent action button footer (below timestamp) ────────────────────────── */
+  .card-action-footer {
+    margin-top: 8px;
   }
 </style>

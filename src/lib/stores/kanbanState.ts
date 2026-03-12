@@ -1,5 +1,6 @@
 import { derived, writable, get } from 'svelte/store';
 import { graphNodes } from './graphData';
+import { kanbanDB } from './kanbanDB';
 import type {
   GraphNode, KanbanCard, KanbanStatus, KanbanColumnDef,
   AgentType, CardType, CardLifecycleState, PauseReason,
@@ -53,40 +54,22 @@ export const AGENT_SUGGEST_RULES: Record<KanbanStatus, AgentType[]> = {
   'done':        ['deploy'],
 };
 
-// ── Persistence (localStorage) ───────────────────────────────────────────────
-const STORAGE_KEY = 'kg-kanban-agents';
-const MOVE_KEY    = 'kg-kanban-moves';
-const LOCAL_CARDS_KEY = 'kg-kanban-local-cards';
-const LIFECYCLE_KEY   = 'kg-kanban-lifecycle';
-const ITERATION_KEY   = 'kg-kanban-iterations';
-
-function loadMap(key: string): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(key) || '{}');
-  } catch { return {}; }
-}
-
-function loadJson<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch { return fallback; }
-}
+// ── Persistence (kanbanDB) ────────────────────────────────────────────────────
 
 /** nodeId → AgentType */
 export const agentAssignments = writable<Record<string, AgentType>>(
-  loadMap(STORAGE_KEY) as Record<string, AgentType>
+  kanbanDB.get('agents', {}) as Record<string, AgentType>
 );
 agentAssignments.subscribe(v => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(v));
+  kanbanDB.set('agents', v);
 });
 
 /** nodeId → KanbanStatus (manual column overrides via drag-and-drop) */
 export const statusOverrides = writable<Record<string, KanbanStatus>>(
-  loadMap(MOVE_KEY) as Record<string, KanbanStatus>
+  kanbanDB.get('moves', {}) as Record<string, KanbanStatus>
 );
 statusOverrides.subscribe(v => {
-  localStorage.setItem(MOVE_KEY, JSON.stringify(v));
+  kanbanDB.set('moves', v);
 });
 
 /** Local cards created from UI (not from graph nodes) */
@@ -101,11 +84,55 @@ export interface LocalCardData {
 }
 
 export const localCards = writable<Record<string, LocalCardData>>(
-  loadJson<Record<string, LocalCardData>>(LOCAL_CARDS_KEY, {})
+  kanbanDB.get('cards', {}) as Record<string, LocalCardData>
 );
 localCards.subscribe(v => {
-  localStorage.setItem(LOCAL_CARDS_KEY, JSON.stringify(v));
+  kanbanDB.set('cards', v);
 });
+
+// ── Dependency Store ─────────────────────────────────────────────────────────
+
+/**
+ * Persisted map of cardId → array of cardIds that block it (blockedBy).
+ * The inverse (blocking) is derived from this map.
+ */
+export const cardDependencyMap = writable<Record<string, string[]>>(
+  kanbanDB.get('dependencies', {}) as Record<string, string[]>
+);
+cardDependencyMap.subscribe(v => {
+  kanbanDB.set('dependencies', v);
+});
+
+/**
+ * Derived store: cardId → { blockedBy: string[], blocking: string[] }
+ * blockedBy is read directly from cardDependencyMap.
+ * blocking is computed by scanning all entries for cards that list this card as a blocker.
+ */
+export const cardDependencies = derived(
+  cardDependencyMap,
+  ($deps): Map<string, { blockedBy: string[]; blocking: string[] }> => {
+    const result = new Map<string, { blockedBy: string[]; blocking: string[] }>();
+
+    // Collect all known card IDs (blockers and blocked)
+    const allIds = new Set<string>();
+    for (const [id, blockers] of Object.entries($deps)) {
+      allIds.add(id);
+      for (const b of blockers) allIds.add(b);
+    }
+
+    for (const id of allIds) {
+      const blockedBy = $deps[id] ?? [];
+      // A card is blocking others if it appears in another card's blockedBy list
+      const blocking: string[] = [];
+      for (const [otherId, blockers] of Object.entries($deps)) {
+        if (blockers.includes(id)) blocking.push(otherId);
+      }
+      result.set(id, { blockedBy, blocking });
+    }
+
+    return result;
+  }
+);
 
 /** nodeId → lifecycle state */
 export interface LifecycleData {
@@ -116,10 +143,10 @@ export interface LifecycleData {
 }
 
 export const lifecycleStates = writable<Record<string, LifecycleData>>(
-  loadJson<Record<string, LifecycleData>>(LIFECYCLE_KEY, {})
+  kanbanDB.get('lifecycle', {}) as Record<string, LifecycleData>
 );
 lifecycleStates.subscribe(v => {
-  localStorage.setItem(LIFECYCLE_KEY, JSON.stringify(v));
+  kanbanDB.set('lifecycle', v);
 });
 
 /** nodeId → iteration data */
@@ -132,10 +159,10 @@ export interface IterationData {
 }
 
 export const iterationStates = writable<Record<string, IterationData>>(
-  loadJson<Record<string, IterationData>>(ITERATION_KEY, {})
+  kanbanDB.get('iterations', {}) as Record<string, IterationData>
 );
 iterationStates.subscribe(v => {
-  localStorage.setItem(ITERATION_KEY, JSON.stringify(v));
+  kanbanDB.set('iterations', v);
 });
 
 // ── Actions ──────────────────────────────────────────────────────────────────
@@ -183,8 +210,79 @@ export function updateIteration(
 ): void {
   iterationStates.update(m => ({
     ...m,
-    [nodeId]: { count: 0, score: 0, ...m[nodeId], ...data },
+    [nodeId]: { ...m[nodeId], ...data },
   }));
+}
+
+/**
+ * Record that `cardId` is blocked by `blockedByCardId`.
+ * Idempotent — calling multiple times with the same pair is safe.
+ */
+export function addDependency(cardId: string, blockedByCardId: string): void {
+  cardDependencyMap.update(m => {
+    const existing = m[cardId] ?? [];
+    if (existing.includes(blockedByCardId)) return m;
+    return { ...m, [cardId]: [...existing, blockedByCardId] };
+  });
+}
+
+/**
+ * Remove the dependency edge where `cardId` is blocked by `blockedByCardId`.
+ */
+export function removeDependency(cardId: string, blockedByCardId: string): void {
+  cardDependencyMap.update(m => {
+    const existing = m[cardId];
+    if (!existing) return m;
+    const next = existing.filter(id => id !== blockedByCardId);
+    if (next.length === 0) {
+      const copy = { ...m };
+      delete copy[cardId];
+      return copy;
+    }
+    return { ...m, [cardId]: next };
+  });
+}
+
+/**
+ * Return the list of card IDs that `cardId` is currently blocking.
+ * (Reads synchronously from the current store value.)
+ */
+export function getBlockingCards(cardId: string): string[] {
+  const deps = get(cardDependencyMap);
+  return Object.entries(deps)
+    .filter(([, blockers]) => blockers.includes(cardId))
+    .map(([id]) => id);
+}
+
+/** Archive completed cards older than 30 days — call on app init */
+export function archiveOldCards(): void {
+  const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+  const now = Date.now();
+
+  lifecycleStates.update(m => {
+    const updated = { ...m };
+    for (const [nodeId, data] of Object.entries(updated)) {
+      if (data.state === 'completed' && data.completedAt && (now - data.completedAt) > MAX_AGE_MS) {
+        delete updated[nodeId];
+      }
+    }
+    return updated;
+  });
+
+  // Also clean up local cards that are completed and old
+  localCards.update(m => {
+    const updated = { ...m };
+    for (const [id, card] of Object.entries(updated)) {
+      if ((now - card.createdAt) > MAX_AGE_MS) {
+        // Check if lifecycle is completed
+        const lc = get(lifecycleStates)[id];
+        if (!lc || lc.state === 'completed') {
+          delete updated[id];
+        }
+      }
+    }
+    return updated;
+  });
 }
 
 // ── Status Detection (file path → SDLC column) ──────────────────────────────
@@ -231,9 +329,16 @@ function detectType(f: string): CardType {
 // ── Derived Stores ───────────────────────────────────────────────────────────
 
 export const kanbanCards = derived(
-  [graphNodes, agentAssignments, statusOverrides, localCards, lifecycleStates, iterationStates],
-  ([$nodes, $agents, $overrides, $locals, $lifecycle, $iterations]) => {
+  [graphNodes, agentAssignments, statusOverrides, localCards, lifecycleStates, iterationStates, cardDependencyMap],
+  ([$nodes, $agents, $overrides, $locals, $lifecycle, $iterations, $depMap]) => {
     const cards: KanbanCard[] = [];
+
+    /** Returns the IDs of cards that `id` is blocking (appears in their blockedBy list). */
+    function computeBlocking(id: string): string[] {
+      return Object.entries($depMap)
+        .filter(([, blockers]) => blockers.includes(id))
+        .map(([otherId]) => otherId);
+    }
 
     // Cards from graph nodes (file-based detection)
     for (const node of $nodes) {
@@ -243,6 +348,8 @@ export const kanbanCards = derived(
       const agent = $agents[node.id] || null;
       const lc = $lifecycle[node.id];
       const iter = $iterations[node.id];
+      const blockedBy = $depMap[node.id] ?? [];
+      const blocking = computeBlocking(node.id);
       cards.push({
         node,
         status,
@@ -256,6 +363,8 @@ export const kanbanCards = derived(
         lastCommand: iter?.lastCommand ?? null,
         lastRunAt: iter?.lastRunAt ?? null,
         artifactPath: iter?.artifactPath ?? node.file ?? null,
+        blockedBy: blockedBy.length > 0 ? blockedBy : undefined,
+        blocking: blocking.length > 0 ? blocking : undefined,
       });
     }
 
@@ -269,6 +378,8 @@ export const kanbanCards = derived(
         label: local.title,
         cat: local.section || 'local',
       };
+      const blockedBy = $depMap[local.id] ?? [];
+      const blocking = computeBlocking(local.id);
       cards.push({
         node: fakeNode,
         status: $overrides[local.id] || local.column,
@@ -284,6 +395,8 @@ export const kanbanCards = derived(
         uploadPath: local.uploadPath ?? null,
         artifactPath: iter?.artifactPath ?? null,
         isLocal: true,
+        blockedBy: blockedBy.length > 0 ? blockedBy : undefined,
+        blocking: blocking.length > 0 ? blocking : undefined,
       });
     }
 
