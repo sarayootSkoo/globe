@@ -2,13 +2,25 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import {
-  readBoard,
-  writeBoard,
-  readEvents,
+  // Card operations (SQLite-backed)
+  createCard,
+  getCard,
+  listCards,
+  searchCards,
+  moveCardToColumn,
+  updateCardStatus,
+  // Workflow operations
+  startWorkflow,
+  completeWorkflow,
+  getWorkflows,
+  // Metrics
+  getMetrics,
+  // Events (append-only JSONL)
   appendEvent,
+  readEvents,
+  // Legacy compat
+  readBoard,
   readStatus,
-  readPending,
-  readResult,
 } from './kanban-db.mjs';
 
 // --- Helpers ---
@@ -29,7 +41,7 @@ function err(message) {
 
 const server = new McpServer({
   name: 'mcp-kanban',
-  version: '1.0.0',
+  version: '2.0.0',
 });
 
 // 1. kanban_get_board — Read full board state
@@ -37,7 +49,7 @@ server.registerTool(
   'kanban_get_board',
   {
     title: 'Get Board State',
-    description: 'Read the full Kanban board state including all cards, columns, and current session status.',
+    description: 'Read the full Kanban board state including all cards, columns, and current session status. Data is served from SQLite.',
     inputSchema: z.object({}).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
@@ -48,12 +60,12 @@ server.registerTool(
   },
 );
 
-// 2. kanban_list_cards — List cards with filters
+// 2. kanban_list_cards — List cards with filters (now uses SQL queries)
 server.registerTool(
   'kanban_list_cards',
   {
     title: 'List Cards',
-    description: 'List Kanban cards with optional filters by column, status, or agent. Returns up to `limit` cards.',
+    description: 'List Kanban cards with optional filters by column, status, or agent. Uses SQL indexed queries for fast filtering.',
     inputSchema: z
       .object({
         column: z.string().optional().describe('Filter by column name (e.g. "backlog", "in-progress", "done")'),
@@ -65,31 +77,17 @@ server.registerTool(
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   async ({ column, status, agent, limit }) => {
-    const board = readBoard();
-    let cards = board.cards ?? [];
-
-    // Determine which cards belong to the requested column via board.columns map
-    if (column) {
-      const columnCardIds = new Set(board.columns?.[column] ?? []);
-      cards = cards.filter((c) => columnCardIds.has(c.id) || c.column === column);
-    }
-    if (status) {
-      cards = cards.filter((c) => c.status === status);
-    }
-    if (agent) {
-      cards = cards.filter((c) => c.agent === agent);
-    }
-
-    return ok({ total: cards.length, cards: cards.slice(0, limit) });
+    const cards = listCards({ column, status, agent, limit });
+    return ok({ total: cards.length, cards });
   },
 );
 
-// 3. kanban_get_card — Get single card details
+// 3. kanban_get_card — Get single card details (direct SQLite lookup by PK)
 server.registerTool(
   'kanban_get_card',
   {
     title: 'Get Card',
-    description: 'Get full details for a single Kanban card by its ID.',
+    description: 'Get full details for a single Kanban card by its ID, including workflow history.',
     inputSchema: z
       .object({
         card_id: z.string().min(1).describe('The card ID to retrieve'),
@@ -98,19 +96,19 @@ server.registerTool(
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   async ({ card_id }) => {
-    const board = readBoard();
-    const card = (board.cards ?? []).find((c) => c.id === card_id);
+    const card = getCard(card_id);
     if (!card) return err(`Card not found: ${card_id}`);
-    return ok(card);
+    const workflows = getWorkflows(card_id);
+    return ok({ ...card, workflows });
   },
 );
 
-// 4. kanban_create_card — Create new card
+// 4. kanban_create_card — Create new card (INSERT into SQLite)
 server.registerTool(
   'kanban_create_card',
   {
     title: 'Create Card',
-    description: 'Create a new Kanban card and place it in the specified column (default: backlog).',
+    description: 'Create a new Kanban card and place it in the specified column (default: backlog). Stored in SQLite.',
     inputSchema: z
       .object({
         title: z.string().min(1).describe('Card title'),
@@ -122,33 +120,14 @@ server.registerTool(
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   async ({ title, section, column, priority }) => {
-    const board = readBoard();
-    const newCard = {
-      id: generateId(),
-      title,
-      section,
-      column,
-      priority,
-      status: 'idle',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    board.cards = [...(board.cards ?? []), newCard];
-
-    // Add to column list
-    if (!board.columns) board.columns = {};
-    if (!board.columns[column]) board.columns[column] = [];
-    board.columns[column] = [...board.columns[column], newCard.id];
-
-    writeBoard(board);
-    appendEvent({ type: 'card:created', cardId: newCard.id, title, column, priority, section });
-
-    return ok(newCard);
+    const id = generateId();
+    const card = createCard({ id, title, section, column, priority });
+    appendEvent({ type: 'card:created', cardId: id, title, column, priority, section });
+    return ok(card);
   },
 );
 
-// 5. kanban_move_card — Move card to column
+// 5. kanban_move_card — Move card to column (SQL UPDATE)
 server.registerTool(
   'kanban_move_card',
   {
@@ -164,41 +143,19 @@ server.registerTool(
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   async ({ card_id, to_column, reason }) => {
-    const board = readBoard();
-    const cardIndex = (board.cards ?? []).findIndex((c) => c.id === card_id);
-    if (cardIndex === -1) return err(`Card not found: ${card_id}`);
-
-    const card = board.cards[cardIndex];
-    const fromColumn = card.column;
-
-    // Remove from old column list
-    if (board.columns?.[fromColumn]) {
-      board.columns[fromColumn] = board.columns[fromColumn].filter((id) => id !== card_id);
-    }
-
-    // Add to new column list
-    if (!board.columns) board.columns = {};
-    if (!board.columns[to_column]) board.columns[to_column] = [];
-    board.columns[to_column] = [...board.columns[to_column], card_id];
-
-    // Update card
-    board.cards[cardIndex] = { ...card, column: to_column, updatedAt: Date.now() };
-
-    writeBoard(board);
-    appendEvent({ type: 'card:moved', cardId: card_id, fromColumn, toColumn: to_column, reason });
-
-    return ok(board.cards[cardIndex]);
+    const result = moveCardToColumn(card_id, to_column);
+    if (!result) return err(`Card not found: ${card_id}`);
+    appendEvent({ type: 'card:moved', cardId: card_id, fromColumn: result.fromColumn, toColumn: to_column, reason });
+    return ok(result.card);
   },
 );
 
-// 6. kanban_update_status — Update card lifecycle status
-const VALID_STATUSES = ['idle', 'started', 'running', 'paused', 'completed', 'failed', 'blocked'];
-
+// 6. kanban_update_status — Update card lifecycle status (SQL UPDATE)
 server.registerTool(
   'kanban_update_status',
   {
     title: 'Update Card Status',
-    description: `Update the lifecycle status of a Kanban card. Valid statuses: ${VALID_STATUSES.join(', ')}.`,
+    description: 'Update the lifecycle status of a Kanban card. Valid statuses: idle, started, running, paused, completed, failed, blocked.',
     inputSchema: z
       .object({
         card_id: z.string().min(1).describe('The card ID to update'),
@@ -209,27 +166,19 @@ server.registerTool(
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   async ({ card_id, status, reason }) => {
-    const board = readBoard();
-    const cardIndex = (board.cards ?? []).findIndex((c) => c.id === card_id);
-    if (cardIndex === -1) return err(`Card not found: ${card_id}`);
-
-    const card = board.cards[cardIndex];
-    const previousStatus = card.status;
-
-    board.cards[cardIndex] = { ...card, status, updatedAt: Date.now() };
-    writeBoard(board);
-    appendEvent({ type: 'lifecycle:changed', cardId: card_id, previousStatus, status, reason });
-
-    return ok(board.cards[cardIndex]);
+    const result = updateCardStatus(card_id, status, reason);
+    if (!result) return err(`Card not found: ${card_id}`);
+    appendEvent({ type: 'lifecycle:changed', cardId: card_id, previousStatus: result.previousStatus, status, reason });
+    return ok(result.card);
   },
 );
 
-// 7. kanban_start_workflow — Start workflow for card
+// 7. kanban_start_workflow — Start workflow for card (INSERT into workflows table)
 server.registerTool(
   'kanban_start_workflow',
   {
     title: 'Start Workflow',
-    description: 'Record that a workflow has started for a card.',
+    description: 'Record that a workflow has started for a card. Stores in SQLite workflows table.',
     inputSchema: z
       .object({
         card_id: z.string().min(1).describe('The card ID to start a workflow for'),
@@ -240,14 +189,19 @@ server.registerTool(
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   async ({ card_id, command, input_path }) => {
-    const board = readBoard();
-    const card = (board.cards ?? []).find((c) => c.id === card_id);
+    const card = getCard(card_id);
     if (!card) return err(`Card not found: ${card_id}`);
 
-    const event = { type: 'workflow:started', cardId: card_id, command, input_path };
-    appendEvent(event);
+    const workflowId = `wf_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const workflow = startWorkflow({
+      id: workflowId,
+      card_id,
+      command,
+      from_column: card.column_id,
+    });
+    appendEvent({ type: 'workflow:started', cardId: card_id, workflowId, command, input_path });
 
-    return ok({ card_id, command, input_path, message: 'Workflow started' });
+    return ok({ ...workflow, input_path, message: 'Workflow started' });
   },
 );
 
@@ -267,26 +221,30 @@ server.registerTool(
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
   async ({ card_id, output_path, suggested_next }) => {
-    const board = readBoard();
-    const cardIndex = (board.cards ?? []).findIndex((c) => c.id === card_id);
-    if (cardIndex === -1) return err(`Card not found: ${card_id}`);
+    const card = getCard(card_id);
+    if (!card) return err(`Card not found: ${card_id}`);
 
-    const card = board.cards[cardIndex];
-    board.cards[cardIndex] = { ...card, status: 'completed', updatedAt: Date.now() };
-    writeBoard(board);
+    // Complete the most recent running workflow for this card
+    const workflows = getWorkflows(card_id);
+    const runningWf = workflows.find(w => w.status === 'running');
+    if (runningWf) {
+      completeWorkflow(runningWf.id, { status: 'completed', output: { output_path, suggested_next } });
+    }
 
+    // Update card status to completed
+    updateCardStatus(card_id, 'completed');
     appendEvent({ type: 'workflow:completed', cardId: card_id, output_path, suggested_next });
 
     return ok({ card_id, output_path, suggested_next, message: 'Workflow completed' });
   },
 );
 
-// 9. kanban_search — Search cards by text
+// 9. kanban_search — Search cards by text (SQL LIKE query with index)
 server.registerTool(
   'kanban_search',
   {
     title: 'Search Cards',
-    description: 'Search Kanban cards by text in their title or section. Case-insensitive.',
+    description: 'Search Kanban cards by text in their title or section. Uses SQL LIKE queries.',
     inputSchema: z
       .object({
         query: z.string().min(1).describe('Search text to match against card titles and sections'),
@@ -296,25 +254,17 @@ server.registerTool(
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   async ({ query, limit }) => {
-    const board = readBoard();
-    const lower = query.toLowerCase();
-
-    const matches = (board.cards ?? []).filter(
-      (c) =>
-        c.title?.toLowerCase().includes(lower) ||
-        c.section?.toLowerCase().includes(lower),
-    );
-
-    return ok({ query, total: matches.length, cards: matches.slice(0, limit) });
+    const matches = searchCards(query, limit);
+    return ok({ query, total: matches.length, cards: matches });
   },
 );
 
-// 10. kanban_metrics — Board metrics
+// 10. kanban_metrics — Board metrics (SQL aggregate queries)
 server.registerTool(
   'kanban_metrics',
   {
     title: 'Board Metrics',
-    description: 'Get Kanban board metrics: card counts per column and status, WIP count, and recent event count.',
+    description: 'Get Kanban board metrics: card counts per column and status, WIP count, and recent event count. Uses SQL COUNT/GROUP BY.',
     inputSchema: z
       .object({
         period: z.enum(['today', 'week', 'month', 'all']).default('all').describe('Time period for event metrics (default: "all")'),
@@ -323,33 +273,10 @@ server.registerTool(
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   async ({ period }) => {
-    const board = readBoard();
-    const cards = board.cards ?? [];
+    const metrics = getMetrics();
 
-    // Cards per column
-    const perColumn = {};
-    for (const [col, ids] of Object.entries(board.columns ?? {})) {
-      perColumn[col] = ids.length;
-    }
-    // Also tally from card.column for cards not in board.columns
-    for (const card of cards) {
-      if (card.column && !(card.column in perColumn)) {
-        perColumn[card.column] = (perColumn[card.column] ?? 0) + 1;
-      }
-    }
-
-    // Cards per status
-    const perStatus = {};
-    for (const card of cards) {
-      const s = card.status ?? 'unknown';
-      perStatus[s] = (perStatus[s] ?? 0) + 1;
-    }
-
-    // WIP = cards with status running or started
-    const wip = cards.filter((c) => c.status === 'running' || c.status === 'started').length;
-
-    // Recent events by period
-    const allEvents = readEvents(0); // read all
+    // Recent events by period (from JSONL)
+    const allEvents = readEvents(0);
     let filteredEvents = allEvents;
     const now = Date.now();
     const periodMs = { today: 86400000, week: 604800000, month: 2592000000 };
@@ -360,12 +287,8 @@ server.registerTool(
 
     return ok({
       period,
-      totalCards: cards.length,
-      perColumn,
-      perStatus,
-      wip,
+      ...metrics,
       recentEvents: filteredEvents.length,
-      boardUpdatedAt: board.updatedAt,
     });
   },
 );
@@ -375,7 +298,7 @@ server.registerTool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('mcp-kanban v1.0.0 running via stdio');
+  console.error('mcp-kanban v2.0.0 (SQLite) running via stdio');
 }
 
 main().catch((err) => {

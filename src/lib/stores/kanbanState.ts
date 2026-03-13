@@ -1,6 +1,7 @@
 import { derived, writable, get } from 'svelte/store';
 import { graphNodes } from './graphData';
 import { kanbanDB, exportBoardState } from './kanbanDB';
+import { addLog } from './activityLog';
 import type {
   GraphNode, KanbanCard, KanbanStatus, KanbanColumnDef,
   AgentType, CardType, CardLifecycleState, PauseReason,
@@ -72,10 +73,21 @@ statusOverrides.subscribe(v => {
   kanbanDB.set('moves', v);
 });
 
+/** Per-card updated-at timestamp (ms) — set on move, lifecycle change, agent assign */
+export const cardUpdatedAt = writable<Record<string, number>>(
+  kanbanDB.get('cardUpdatedAt', {}) as Record<string, number>
+);
+cardUpdatedAt.subscribe(v => { kanbanDB.set('cardUpdatedAt', v); });
+
+function touchCard(nodeId: string): void {
+  cardUpdatedAt.update(m => ({ ...m, [nodeId]: Date.now() }));
+}
+
 /** Local cards created from UI (not from graph nodes) */
 export interface LocalCardData {
   id: string;
   title: string;
+  description?: string;
   section?: string;
   column: KanbanStatus;
   type: CardType;
@@ -168,15 +180,33 @@ iterationStates.subscribe(v => {
 // ── Actions ──────────────────────────────────────────────────────────────────
 
 export function assignAgent(nodeId: string, agent: AgentType): void {
+  const prev = get(agentAssignments)[nodeId] ?? null;
   agentAssignments.update(m => ({ ...m, [nodeId]: agent }));
+  if (agent) {
+    addLog(nodeId, 'agent:assigned', { agent, prev });
+  } else {
+    addLog(nodeId, 'agent:unassigned', { prev });
+  }
 }
 
 export function moveCard(nodeId: string, newStatus: KanbanStatus): void {
+  const prev = get(statusOverrides)[nodeId] ?? null;
   statusOverrides.update(m => ({ ...m, [nodeId]: newStatus }));
+  touchCard(nodeId);
+  addLog(nodeId, 'card:moved', { from: prev, to: newStatus });
 }
 
 export function addLocalCard(card: LocalCardData): void {
   localCards.update(m => ({ ...m, [card.id]: card }));
+  addLog(card.id, 'card:created', { title: card.title, column: card.column, type: card.type });
+}
+
+export function updateLocalCard(cardId: string, updates: Partial<Pick<LocalCardData, 'title' | 'description' | 'section' | 'type' | 'column' | 'uploadPath'>>): void {
+  localCards.update(m => {
+    if (!m[cardId]) return m;
+    return { ...m, [cardId]: { ...m[cardId], ...updates } };
+  });
+  addLog(cardId, 'card:updated', updates);
 }
 
 export function removeLocalCard(cardId: string): void {
@@ -192,6 +222,7 @@ export function updateLifecycle(
   state: CardLifecycleState,
   pauseReason?: PauseReason | null,
 ): void {
+  const prev = get(lifecycleStates)[nodeId]?.state ?? 'idle';
   lifecycleStates.update(m => ({
     ...m,
     [nodeId]: {
@@ -202,6 +233,9 @@ export function updateLifecycle(
       ...(state === 'completed' ? { completedAt: Date.now() } : {}),
     },
   }));
+  touchCard(nodeId);
+  const action = `lifecycle:${state}` as const;
+  addLog(nodeId, action, { from: prev, to: state, ...(pauseReason ? { pauseReason } : {}) });
 }
 
 export function updateIteration(
@@ -212,6 +246,7 @@ export function updateIteration(
     ...m,
     [nodeId]: { ...m[nodeId], ...data },
   }));
+  addLog(nodeId, 'iteration:updated', { ...data });
 }
 
 /**
@@ -224,6 +259,7 @@ export function addDependency(cardId: string, blockedByCardId: string): void {
     if (existing.includes(blockedByCardId)) return m;
     return { ...m, [cardId]: [...existing, blockedByCardId] };
   });
+  addLog(cardId, 'dependency:added', { blockedBy: blockedByCardId });
 }
 
 /**
@@ -241,6 +277,7 @@ export function removeDependency(cardId: string, blockedByCardId: string): void 
     }
     return { ...m, [cardId]: next };
   });
+  addLog(cardId, 'dependency:removed', { blockedBy: blockedByCardId });
 }
 
 /**
@@ -376,6 +413,7 @@ export const kanbanCards = derived(
       const fakeNode: GraphNode = {
         id: local.id,
         label: local.title,
+        desc: local.description || undefined,
         cat: local.section || 'local',
       };
       const blockedBy = $depMap[local.id] ?? [];
@@ -520,7 +558,60 @@ export const cardPriorities = derived(kanbanCards, ($cards): Map<string, CardPri
   return result;
 });
 
-// ── Board Sync (browser → event-server → .kanban/board.json) ─────────────────
+// ── Bulk lifecycle update (for IPC bridge status transitions) ─────────────────
+
+/**
+ * Update all cards matching `fromState` to `toState`.
+ * Used by ipcBridge when it detects a session status transition
+ * (e.g. idle → running means Claude just started, so mark 'started' cards as 'running').
+ */
+export function updateLifecycleByStatus(
+  fromState: CardLifecycleState,
+  toState: CardLifecycleState,
+): void {
+  lifecycleStates.update(m => {
+    const next = { ...m };
+    let changed = false;
+    for (const [id, data] of Object.entries(next)) {
+      if (data.state === fromState) {
+        next[id] = { ...data, state: toState };
+        changed = true;
+      }
+    }
+    return changed ? next : m;
+  });
+}
+
+// ── Board Merge (event-server/MCP → browser stores) ──────────────────────────
+
+/**
+ * Merge remote board state (from .kanban/board.json) into local Svelte stores.
+ * Called when WebSocket receives a 'board:updated' message, meaning the MCP
+ * server or a Claude hook wrote new data. Uses "remote wins" merge strategy.
+ */
+export function mergeBoardState(board: {
+  cards?: Record<string, unknown>;
+  lifecycle?: Record<string, LifecycleData>;
+  agents?: Record<string, AgentType>;
+  moves?: Record<string, KanbanStatus>;
+  dependencies?: Record<string, string[]>;
+  workflows?: Record<string, unknown>;
+}): void {
+  if (board.lifecycle) {
+    lifecycleStates.update(current => ({ ...current, ...board.lifecycle }));
+  }
+  if (board.agents) {
+    agentAssignments.update(current => ({ ...current, ...board.agents }));
+  }
+  if (board.moves) {
+    statusOverrides.update(current => ({ ...current, ...board.moves }));
+  }
+  if (board.dependencies) {
+    cardDependencyMap.update(current => ({ ...current, ...board.dependencies }));
+  }
+}
+
+// ── Board Sync (browser → event-server → .kanban/board.json + SQLite) ────────
 
 const BOARD_SYNC_URL = 'http://localhost:4010/board';
 const BOARD_SYNC_DEBOUNCE_MS = 5000;
@@ -528,30 +619,93 @@ const BOARD_SYNC_DEBOUNCE_MS = 5000;
 let _syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let _syncUnsubscribe: (() => void) | null = null;
 
+/** Track DB sync state: cardId → { synced, lastSyncAt } */
+export const dbSyncState = writable<Record<string, { synced: boolean; lastSyncAt: number }>>({});
+
 /**
- * Serialise the current board state and POST it to the local event server.
- * Fails silently if the server is not running — this is best-effort sync.
+ * Serialise ALL kanban cards (graph + local) and POST to the event server.
+ * The event server writes board.json AND syncs to SQLite.
  */
 export async function syncBoardToServer(): Promise<void> {
-  const payload = exportBoardState();
+  // Get full card data from the derived store
+  const allCards = get(kanbanCards);
+  const $lifecycle = get(lifecycleStates);
+  const $agents = get(agentAssignments);
+  const $priorities = get(cardPriorities);
+
+  // Build card array with all fields for DB sync
+  const cards = allCards.map(c => ({
+    id: c.node.id,
+    title: c.node.label,
+    label: c.node.label,
+    section: c.node.cat || null,
+    cat: c.node.cat || null,
+    column_id: c.status,
+    column: c.status,
+    status: c.status,
+    lifecycleState: c.lifecycle,
+    lifecycle: c.lifecycle,
+    priority: (() => { const s = $priorities.get(c.node.id)?.score ?? 0; return s >= 60 ? 'high' : s >= 30 ? 'medium' : 'low'; })(),
+    agent: c.agent || null,
+    agent_type: c.agent || null,
+    filePath: c.filePath || null,
+    artifactPath: c.artifactPath || null,
+    type: c.type,
+    isLocal: c.isLocal || false,
+    iterationCount: c.iterationCount,
+    iterationScore: c.iterationScore,
+    metadata: {
+      type: c.type,
+      cat: c.node.cat,
+      keywords: c.node.keywords || [],
+      desc: c.node.desc || null,
+    },
+  }));
+
+  // Also include legacy localStorage export for backward compat
+  const legacyPayload = JSON.parse(exportBoardState());
+
+  const payload = JSON.stringify({
+    ...legacyPayload,
+    cards,
+    syncedAt: Date.now(),
+  });
+
   try {
-    await fetch(BOARD_SYNC_URL, {
+    const res = await fetch(BOARD_SYNC_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: payload,
     });
+    if (res.ok) {
+      const result = await res.json();
+      // Update sync state for all cards
+      const now = Date.now();
+      const syncUpdate: Record<string, { synced: boolean; lastSyncAt: number }> = {};
+      for (const c of cards) {
+        syncUpdate[c.id] = { synced: true, lastSyncAt: now };
+      }
+      dbSyncState.set(syncUpdate);
+    }
   } catch {
-    // Event server not running — ignore
+    // Event server not running — mark all as not synced
+    const syncUpdate: Record<string, { synced: boolean; lastSyncAt: number }> = {};
+    for (const c of cards) {
+      syncUpdate[c.id] = { synced: false, lastSyncAt: 0 };
+    }
+    dbSyncState.set(syncUpdate);
   }
 }
 
 /**
  * Start watching `kanbanCards` for changes and syncing to the event server
- * with a 5-second debounce. Safe to call multiple times — only one
- * subscription is kept.
+ * with a 5-second debounce. Performs an initial sync immediately.
  */
 export function startBoardSync(): void {
   if (_syncUnsubscribe !== null) return; // already running
+
+  // Initial sync on start
+  syncBoardToServer();
 
   _syncUnsubscribe = kanbanCards.subscribe(() => {
     if (_syncDebounceTimer !== null) clearTimeout(_syncDebounceTimer);

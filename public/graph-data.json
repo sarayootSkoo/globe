@@ -1,8 +1,8 @@
 {
-  "generated": "2026-03-11T18:28:09.009Z",
+  "generated": "2026-03-12T11:20:41.144Z",
   "root": "/Users/grammer/Documents/git-central/knowledge/docs",
   "stats": {
-    "totalFiles": 607,
+    "totalFiles": 609,
     "totalLinks": 181,
     "categories": [
       "core",
@@ -13,7 +13,7 @@
     "statusCounts": {
       "done": 434,
       "in-progress": 99,
-      "planned": 29,
+      "planned": 30,
       "hold": 0
     },
     "crossRepoCount": 63
@@ -26,6 +26,14 @@
       "desc": "Symlinked documentation from project repositories into a unified graph data sour",
       "file": "README.md",
       "preview": "# Knowledge Docs\n\nSymlinked documentation from project repositories into a unified graph data source.\n\n## Current Links\n\n| Link Name | Target |\n|-----------|--------|\n| `oms-order-docs` | `../../oms-order/docs` |\n| `oms-order-discuss` | `../../oms-order/discussion` |\n| `oms-order-specs` | `../../oms-order/specs` |\n| `oms-order-tasks` | `../../oms-order/tasks` |\n| `oms-webapp-docs` | `../../oms-webapp/docs` |\n| `oms-webapp-discuss` | `../../oms-webapp/discussion` |\n| `oms-webapp-help-docs` | `../"
+    },
+    {
+      "id": "_e2e-test-temp",
+      "label": "_e2e-test-temp",
+      "cat": "core",
+      "desc": "Generated: 2026-03-12T11:20:40.175Z",
+      "file": "_e2e-test-temp.md",
+      "preview": "# E2E Test\n\nGenerated: 2026-03-12T11:20:40.175Z\n"
     },
     {
       "id": "oms-order-discuss-chore-03_03_2026_22_06_00-process-notification-performance-tuning",
@@ -43,6 +51,15 @@
       "desc": "adw_id: `flow`",
       "file": "oms-order-discuss/chore-10_03_2026_13_06_20-flow-add-orgid-orderline-fulfillment-detail.md",
       "preview": "# Chore: เพิ่ม org_id ใน order_lines และ fulfillment_details เพื่อป้องกัน orderId ซ้ำข้าม org\n\n## Metadata\nadw_id: `flow`\nprompt: `new column org_id insert orgorderLine and fulfillmentDetail at table protect orderid duplication because orgId not relate table data and scan table relate need orgId`\ndatetime: `10-03-2026 13:06:20`\n\n---\n\n## Chore Description\nตาราง `order_lines` และ `fulfillment_details` ไม่มี column `org_id` ทั้งที่ตาราง related อื่นๆ ทั้งหมดมีแล้ว (`orders`, `quantity_details`, `re",
+      "status": "planned"
+    },
+    {
+      "id": "oms-order-discuss-deduct-stock-substitute-12_03_2026_18_07_50",
+      "label": "deduct-stock-substitute-12_03_2026_18_07_50",
+      "cat": "oms-order",
+      "desc": "**Date:** 12-03-2026 18:07",
+      "file": "oms-order-discuss/deduct-stock-substitute-12_03_2026_18_07_50.md",
+      "preview": "# Discussion: Deduct Stock in Substitution Workflow\n\n**Date:** 12-03-2026 18:07\n**Context:** Feature `61533-deduct-stock-subsitute` เพิ่ม step การ deduct stock จาก Inventory Service เมื่อทำ substitution สำเร็จ\n**Participants:** Developer + AI Reviewer\n**Status:** Agreed\n\n---\n\n## Background\n\nเมื่อเกิดการ substitute สินค้า (เช่น สินค้า A หมด → เปลี่ยนเป็นสินค้า B) ระบบเดิมทำแค่ update order line + fulfillment detail + quantity detail + publish event แต่ไม่ได้ **หักสต็อก** ของสินค้าใหม่ (substitute",
       "status": "planned"
     },
     {

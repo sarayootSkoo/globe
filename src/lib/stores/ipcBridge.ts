@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import type { KanbanEvent, KanbanEventType } from '../types';
+import { updateLifecycleByStatus } from './kanbanState';
 
 // ── IPC File Paths (relative to app root, served as static assets) ───────────
 export const IPC_PATHS = {
@@ -37,6 +38,9 @@ const POLL_INTERVAL_MS = 2000;
 /** Timestamp of the last status.json that was fetched (used for stale detection). */
 let lastStatusAt: number | null = null;
 
+/** Track last known status for transition detection. */
+let lastKnownStatus: string | null = null;
+
 // ── Poll Implementation ───────────────────────────────────────────────────────
 
 async function fetchStatus(): Promise<void> {
@@ -66,6 +70,13 @@ async function fetchStatus(): Promise<void> {
 
     ipcConnected.set(isRunning || isRecent);
     lastStatusAt = now;
+
+    // Detect status transitions and update kanbanState accordingly
+    if (data.status === 'running' && lastKnownStatus !== 'running') {
+      // Claude just started — transition 'started' cards to 'running'
+      updateLifecycleByStatus('started', 'running');
+    }
+    lastKnownStatus = data.status;
 
     // Build a synthetic KanbanEvent from the status payload so the UI can
     // display "last event type + timestamp" without parsing events.jsonl.

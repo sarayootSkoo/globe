@@ -4,6 +4,7 @@
   import { showCrossRepo, crossRepoFilter } from '../../lib/stores/crossRepoState';
   import { toggleCommandPanel } from '../../lib/stores/commandState';
   import { startPolling, stopPolling } from '../../lib/stores/ipcBridge';
+  import { navigateTo } from '../../lib/router';
   import type { AppMode } from '../../lib/stores/appState';
   import type { GraphNode, GraphLink, ViewMode } from '../../lib/types';
 
@@ -42,30 +43,30 @@
 
   // ── Actions ────────────────────────────────────────────────────────────
   function switchToGlobe(): void {
-    viewMode.set('globe');
+    navigateTo('globe');
     resetMode();
     openPanel = null;
   }
   function switchToBoard(): void {
-    viewMode.set('kanban');
+    navigateTo('kanban');
     openPanel = null;
   }
   function handleExplore(): void {
-    viewMode.set('globe');
+    navigateTo('globe');
     resetMode();
   }
   function handlePath(): void {
-    viewMode.set('globe');
+    navigateTo('globe');
     if (mode === 'path') { resetMode(); }
     else { resetMode(); currentMode.set('path'); pathSelection.set([]); }
   }
   function handleImpact(): void {
-    viewMode.set('globe');
+    navigateTo('globe');
     if (mode === 'impact') { resetMode(); }
     else { resetMode(); currentMode.set('impact'); }
   }
   function handleCrossRepo(): void {
-    viewMode.set('globe');
+    navigateTo('globe');
     crossRepoPanelOpen = !crossRepoPanelOpen;
     oncrossrepopanel?.();
     if (!crossRepoPanelOpen) { showCrossRepo.set(false); crossRepoFilter.set(null); }
@@ -87,7 +88,7 @@
   }
   function handleReset(): void {
     resetMode();
-    viewMode.set('globe');
+    navigateTo('globe');
     openPanel = null;
   }
   function resetMode(): void {

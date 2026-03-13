@@ -1,17 +1,17 @@
 <script lang="ts">
   import type { KanbanCard } from '../../lib/types';
-  import { buildCommandString } from '../../lib/workflow/commandRegistry';
+  import { buildCommandString, getCommandsForColumn } from '../../lib/workflow/commandRegistry';
 
   interface Props {
     card: KanbanCard;
-    onResume: (copyCommand: boolean) => void;
+    onResume: (copyCommand: boolean, launchClaude?: boolean) => void;
     onSkip: () => void;
     onCancel: () => void;
   }
 
   let { card, onResume, onSkip, onCancel }: Props = $props();
 
-  let pauseDuration = $derived(() => {
+  let pauseDuration = $derived.by(() => {
     if (!card.lastRunAt) return 'unknown';
     const ms = Date.now() - card.lastRunAt;
     const m = Math.floor(ms / 60000);
@@ -20,13 +20,22 @@
     return `${h}h ${m % 60}m ago`;
   });
 
+  // Use lastCommand if available, otherwise derive from column
+  let effectiveCommand = $derived(
+    card.lastCommand || getCommandsForColumn(card.status)[0] || ''
+  );
+
   let resumeCommand = $derived(
-    card.lastCommand ? buildCommandString(card, card.lastCommand) : ''
+    effectiveCommand ? buildCommandString(card, effectiveCommand) : ''
   );
 
   function handleCopy() {
     if (resumeCommand) navigator.clipboard.writeText(resumeCommand);
     onResume(true);
+  }
+
+  function handleLaunch() {
+    onResume(false, true);
   }
 </script>
 
@@ -43,7 +52,7 @@
     </div>
     <div class="dialog-row">
       <span class="label">Paused:</span>
-      <span class="value">{pauseDuration()}</span>
+      <span class="value">{pauseDuration}</span>
     </div>
     {#if card.pauseReason}
       <div class="dialog-row">
@@ -67,7 +76,8 @@
     {/if}
 
     <div class="dialog-actions">
-      <button class="btn btn-primary" onclick={handleCopy}>Resume & Copy</button>
+      <button class="btn btn-launch" onclick={handleLaunch}>Resume & Launch Claude</button>
+      <button class="btn btn-primary" onclick={handleCopy}>Resume & Copy Command</button>
       <button class="btn btn-secondary" onclick={() => onResume(false)}>Resume Only</button>
       <button class="btn btn-warn" onclick={onSkip}>Skip & Complete</button>
       <button class="btn btn-ghost" onclick={onCancel}>Cancel</button>
@@ -90,6 +100,8 @@
   .cmd-box { margin-top: 6px; background: rgba(0,229,255,0.06); border: 1px solid rgba(0,229,255,0.15); border-radius: 6px; padding: 10px 12px; font-size: 11px; color: #00e5ff; word-break: break-all; }
   .dialog-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
   .btn { border: none; border-radius: 6px; padding: 10px 16px; font-size: 12px; font-family: inherit; cursor: pointer; font-weight: 600; }
+  .btn-launch { background: rgba(0,255,136,0.15); color: #00ff88; border: 1px solid rgba(0,255,136,0.3); }
+  .btn-launch:hover { background: rgba(0,255,136,0.25); }
   .btn-primary { background: rgba(0,229,255,0.15); color: #00e5ff; border: 1px solid rgba(0,229,255,0.3); }
   .btn-primary:hover { background: rgba(0,229,255,0.25); }
   .btn-secondary { background: rgba(255,255,255,0.05); color: #aaa; border: 1px solid rgba(255,255,255,0.08); }

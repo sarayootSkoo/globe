@@ -3,12 +3,14 @@
   import {
     KANBAN_COLUMNS, AGENT_DEFS,
     kanbanCards, kanbanColumns,
-    cardPriorities,
+    cardPriorities, cardUpdatedAt,
     assignAgent, moveCard,
     updateLifecycle,
+    startBoardSync, stopBoardSync,
+    dbSyncState,
   } from '../../lib/stores/kanbanState';
   import { CATEGORIES } from '../../lib/constants';
-  import { buildCommandString } from '../../lib/workflow/commandRegistry';
+  import { buildCommandString, getCommandsForColumn } from '../../lib/workflow/commandRegistry';
   import type { KanbanCard, KanbanStatus, AgentType, PauseReason } from '../../lib/types';
   import StartDialog from './StartDialog.svelte';
   import PauseDialog from './PauseDialog.svelte';
@@ -16,6 +18,7 @@
   import NewCardDialog from './NewCardDialog.svelte';
   import CardPreview from './CardPreview.svelte';
   import CommandPanel from './CommandPanel.svelte';
+  import AgentTerminal from './AgentTerminal.svelte';
   import AgentSuggestBadge from './AgentSuggestBadge.svelte';
   import CardPriorityBadge from './CardPriority.svelte';
   import DependencyBadge from './DependencyBadge.svelte';
@@ -23,6 +26,7 @@
   import AgentActionButton from './AgentActionButton.svelte';
   import { toggleCommandPanel, queueCommand, markCopied } from '../../lib/stores/commandState';
   import { connectEventServer, disconnectEventServer } from '../../lib/stores/agentEventStore';
+  import { addLog } from '../../lib/stores/activityLog';
 
   let columns = $state(new Map<KanbanStatus, KanbanCard[]>());
   let cards = $state<KanbanCard[]>([]);
@@ -34,6 +38,8 @@
   let searchText = $state('');
   let sortByPriority = $state(false);
   let priorities = $state(new Map<string, import('../../lib/types').CardPriority>());
+  let syncState = $state<Record<string, { synced: boolean; lastSyncAt: number }>>({});
+  let updatedAtMap = $state<Record<string, number>>({});
 
   // Dialog states
   let showNewCard = $state(false);
@@ -44,6 +50,10 @@
 
   // Pending drag target (used when StartDialog is needed before drop)
   let pendingDrop = $state<{ nodeId: string; targetCol: KanbanStatus } | null>(null);
+
+  // Terminal panel open state
+  let terminalOpen = $state(false);
+  let activeTerminalCard = $state<string | null>(null);
 
   $effect(() => {
     const unsub = kanbanColumns.subscribe(v => { columns = v; });
@@ -60,10 +70,23 @@
     return unsub;
   });
 
-  // Connect to agent event WebSocket on mount; disconnect on destroy
+  $effect(() => {
+    const unsub = dbSyncState.subscribe(v => { syncState = v; });
+    return unsub;
+  });
+  $effect(() => {
+    const unsub = cardUpdatedAt.subscribe(v => { updatedAtMap = v; });
+    return unsub;
+  });
+
+  // Connect to agent event WebSocket + board sync on mount; cleanup on destroy
   $effect(() => {
     connectEventServer();
-    return () => disconnectEventServer();
+    startBoardSync();
+    return () => {
+      disconnectEventServer();
+      stopBoardSync();
+    };
   });
 
   // Unique categories and types from cards
@@ -125,6 +148,13 @@
         const scoreA = priorities.get(a.node.id)?.score ?? 0;
         const scoreB = priorities.get(b.node.id)?.score ?? 0;
         return scoreB - scoreA;
+      });
+    } else {
+      // Default: sort by updatedAt descending (recently updated first)
+      filtered.sort((a, b) => {
+        const tA = updatedAtMap[a.node.id] ?? 0;
+        const tB = updatedAtMap[b.node.id] ?? 0;
+        return tB - tA;
       });
     }
     return filtered;
@@ -192,14 +222,58 @@
     dragOverCol = null;
   }
 
+  // ── Agent launch helper ─────────────────────────────────────────────────
+  const EVENT_SERVER = 'http://localhost:4010';
+
+  async function launchAgent(command: string, args: string, cardId: string | null) {
+    try {
+      const res = await fetch(`${EVENT_SERVER}/agent/launch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command, args, cardId }),
+      });
+      const data = await res.json();
+      if (res.ok && data.sessionId) {
+        if (cardId) {
+          addLog(cardId, 'agent:launched', { command, args, sessionId: data.sessionId, pid: data.pid });
+          updateLifecycle(cardId, 'running');
+        }
+        // Auto-open terminal panel so user sees output immediately
+        terminalOpen = true;
+        return data;
+      } else {
+        if (cardId) addLog(cardId, 'agent:launch-failed', { error: data.error || 'Unknown' });
+        return null;
+      }
+    } catch (err: any) {
+      if (cardId) addLog(cardId, 'agent:launch-failed', { error: err.message });
+      return null;
+    }
+  }
+
   // ── Dialog handlers ───────────────────────────────────────────────────────
-  function handleStartConfirm(copyCommand: boolean) {
-    if (pendingDrop && startDialogCard) {
-      updateLifecycle(pendingDrop.nodeId, 'started');
-      moveCard(pendingDrop.nodeId, pendingDrop.targetCol);
-      if (copyCommand && startDialogCard.card) {
-        const cmd = buildCommandString(startDialogCard.card, startDialogCard.card.agent ? AGENT_DEFS[startDialogCard.card.agent]?.command || '/chore' : '/chore');
+  function handleStartConfirm(copyCommand: boolean, launchClaude: boolean = false) {
+    if (startDialogCard) {
+      const nodeId = startDialogCard.card.node.id;
+      updateLifecycle(nodeId, 'started');
+      // Move card if triggered from drag-and-drop
+      if (pendingDrop) {
+        moveCard(pendingDrop.nodeId, pendingDrop.targetCol);
+      }
+
+      const agentCmd = startDialogCard.card.agent ? AGENT_DEFS[startDialogCard.card.agent]?.command || '/chore' : '/chore';
+      const cmd = buildCommandString(startDialogCard.card, agentCmd);
+
+      if (launchClaude) {
+        // Actually launch Claude agent via event server
+        const args = startDialogCard.card.artifactPath || startDialogCard.card.filePath
+          ? `'${startDialogCard.card.artifactPath || startDialogCard.card.filePath}'`
+          : `"${startDialogCard.card.node.label}"`;
+        launchAgent(agentCmd, args, nodeId);
+        addLog(nodeId, 'command:launched', { command: agentCmd });
+      } else if (copyCommand) {
         navigator.clipboard.writeText(cmd);
+        addLog(nodeId, 'command:copied', { command: agentCmd });
       }
     }
     startDialogCard = null;
@@ -218,9 +292,22 @@
     pauseDialogCard = null;
   }
 
-  function handleResume(copyCommand: boolean) {
+  function handleResume(copyCommand: boolean, launchClaude: boolean = false) {
     if (resumeDialogCard) {
-      updateLifecycle(resumeDialogCard.node.id, 'running');
+      const card = resumeDialogCard;
+      updateLifecycle(card.node.id, 'running');
+
+      // Determine command: use lastCommand, or derive from card's current column
+      const command = card.lastCommand || getCommandsForColumn(card.status)[0] || null;
+
+      if (launchClaude && command) {
+        const args = card.artifactPath ? `'${card.artifactPath}'` : `"${card.node.label}"`;
+        launchAgent(command, args, card.node.id);
+      } else if (copyCommand && command) {
+        const cmdStr = buildCommandString(card, command);
+        if (cmdStr) navigator.clipboard.writeText(cmdStr);
+        addLog(card.node.id, 'command:copied', { command: cmdStr });
+      }
     }
     resumeDialogCard = null;
   }
@@ -236,8 +323,14 @@
     const args = filePath ? `'${filePath}'` : '';
     const cmdStr = filePath ? `${command} ${args}` : command;
     navigator.clipboard.writeText(cmdStr);
-    const entry = queueCommand(command, args, previewCard?.node.id ?? null);
+    const cardId = previewCard?.node.id ?? null;
+    const entry = queueCommand(command, args, cardId);
     markCopied(entry.id);
+    if (cardId) {
+      addLog(cardId, 'command:rerun', { command, filePath });
+      // Actually launch Claude agent
+      launchAgent(command, args, cardId);
+    }
     previewCard = null;
   }
 
@@ -254,9 +347,28 @@
   }
 
   // ── Agent assignment ─────────────────────────────────────────────────────
+  let agentMenuPos = $state<{ top: number; left: number; dropUp: boolean }>({ top: 0, left: 0, dropUp: false });
+
   function toggleAgentMenu(e: MouseEvent, nodeId: string) {
     e.stopPropagation();
-    agentMenuNodeId = agentMenuNodeId === nodeId ? null : nodeId;
+    if (agentMenuNodeId === nodeId) {
+      agentMenuNodeId = null;
+      return;
+    }
+    // Calculate position relative to viewport
+    const target = (e.currentTarget as HTMLElement).closest('.kanban-card') as HTMLElement;
+    if (target) {
+      const rect = target.getBoundingClientRect();
+      const menuHeight = 340; // approximate dropdown height
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const dropUp = spaceBelow < menuHeight && rect.top > menuHeight;
+      agentMenuPos = {
+        top: dropUp ? rect.top - 4 : rect.bottom + 4,
+        left: rect.left,
+        dropUp,
+      };
+    }
+    agentMenuNodeId = nodeId;
   }
 
   function handleAssign(nodeId: string, agent: AgentType) {
@@ -351,11 +463,22 @@
               class:dragging={dragNodeId === card.node.id}
               class:card-running={card.lifecycle === 'running'}
               class:card-paused={card.lifecycle === 'paused'}
+              class:card-terminal-active={terminalOpen && activeTerminalCard === card.node.id}
               draggable="true"
               ondragstart={(e) => handleDragStart(e, card.node.id)}
               ondragend={handleDragEnd}
               onclick={() => handleCardClick(card)}
             >
+              <!-- Card ID + DB sync state -->
+              <div class="card-id-row">
+                <span class="card-id">{card.node.id}</span>
+                {#if syncState[card.node.id]?.synced}
+                  <span class="sync-badge synced" title="Synced to DB at {new Date(syncState[card.node.id].lastSyncAt).toLocaleTimeString()}">DB</span>
+                {:else}
+                  <span class="sync-badge not-synced" title="Not synced to DB">DB</span>
+                {/if}
+              </div>
+
               <!-- Title row + priority badge -->
               <div class="card-title-row">
                 <div class="card-title">{card.node.label}</div>
@@ -452,28 +575,7 @@
                 </div>
               {/if}
 
-              <!-- Agent dropdown -->
-              {#if agentMenuNodeId === card.node.id}
-                <div class="agent-dropdown" onclick={(e) => e.stopPropagation()}>
-                  {#each Object.entries(AGENT_DEFS) as [key, def]}
-                    <button
-                      class="agent-option"
-                      onclick={() => handleAssign(card.node.id, key as AgentType)}
-                    >
-                      <span class="agent-dot" style="background: {def.color}"></span>
-                      {def.label}
-                      <span class="agent-cmd">{def.command}</span>
-                    </button>
-                  {/each}
-                  <button
-                    class="agent-option unassign"
-                    onclick={() => handleAssign(card.node.id, null)}
-                  >
-                    <span class="agent-dot" style="background: #555"></span>
-                    Unassign
-                  </button>
-                </div>
-              {/if}
+              <!-- Agent dropdown rendered as fixed portal below -->
             </div>
           {/each}
         </div>
@@ -481,6 +583,41 @@
     {/each}
   </div>
 </div>
+
+<!-- Agent dropdown (fixed portal — escapes column overflow) -->
+{#if agentMenuNodeId}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="agent-menu-backdrop" onclick={closeAgentMenu}></div>
+  <div
+    class="agent-dropdown"
+    class:drop-up={agentMenuPos.dropUp}
+    style="
+      position: fixed;
+      left: {agentMenuPos.left}px;
+      {agentMenuPos.dropUp ? `bottom: ${window.innerHeight - agentMenuPos.top}px` : `top: ${agentMenuPos.top}px`};
+    "
+    onclick={(e) => e.stopPropagation()}
+  >
+    {#each Object.entries(AGENT_DEFS) as [key, def]}
+      <button
+        class="agent-option"
+        onclick={() => handleAssign(agentMenuNodeId!, key as AgentType)}
+      >
+        <span class="agent-dot" style="background: {def.color}"></span>
+        {def.label}
+        <span class="agent-cmd">{def.command}</span>
+      </button>
+    {/each}
+    <button
+      class="agent-option unassign"
+      onclick={() => handleAssign(agentMenuNodeId!, null)}
+    >
+      <span class="agent-dot" style="background: #555"></span>
+      Unassign
+    </button>
+  </div>
+{/if}
 
 <!-- Dialogs -->
 {#if showNewCard}
@@ -521,6 +658,8 @@
     onCancel={() => resumeDialogCard = null}
   />
 {/if}
+
+<AgentTerminal bind:open={terminalOpen} onActiveTabChange={(id) => activeTerminalCard = id} />
 
 <CommandPanel />
 
@@ -726,6 +865,47 @@
     cursor: grabbing;
   }
 
+  /* Card ID row + DB sync badge */
+  .card-id-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+  .card-id {
+    font-size: 9px;
+    color: #444;
+    font-family: inherit;
+    letter-spacing: 0.03em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+  .kanban-card:hover .card-id {
+    color: #666;
+  }
+  .sync-badge {
+    font-size: 8px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 1px 5px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    border: 1px solid;
+  }
+  .sync-badge.synced {
+    color: #00ff88;
+    border-color: rgba(0, 255, 136, 0.3);
+    background: rgba(0, 255, 136, 0.08);
+  }
+  .sync-badge.not-synced {
+    color: #555;
+    border-color: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.02);
+  }
+
   /* Card title row — title + priority badge */
   .card-title-row {
     display: flex;
@@ -849,12 +1029,13 @@
     color: #444;
   }
 
-  /* ── Agent dropdown ──────────────────────────────────────────────────── */
+  /* ── Agent dropdown (fixed portal) ────────────────────────────────────── */
+  .agent-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 99;
+  }
   .agent-dropdown {
-    position: absolute;
-    bottom: 100%;
-    left: 4px;
-    margin-bottom: 4px;
     background: #151520;
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 8px;
@@ -976,6 +1157,15 @@
   .kanban-card.card-paused {
     border-left: 2px solid rgba(249,115,22,0.5);
     opacity: 0.8;
+  }
+  .kanban-card.card-terminal-active {
+    border-color: rgba(0, 229, 255, 0.5);
+    box-shadow: 0 0 12px rgba(0, 229, 255, 0.2), 0 0 24px rgba(0, 229, 255, 0.08);
+    animation: card-glow-pulse 2s ease-in-out infinite;
+  }
+  @keyframes card-glow-pulse {
+    0%, 100% { box-shadow: 0 0 12px rgba(0, 229, 255, 0.2), 0 0 24px rgba(0, 229, 255, 0.08); }
+    50% { box-shadow: 0 0 18px rgba(0, 229, 255, 0.35), 0 0 36px rgba(0, 229, 255, 0.12); }
   }
 
   /* ── Iteration badge on card ───────────────────────────────────────────── */

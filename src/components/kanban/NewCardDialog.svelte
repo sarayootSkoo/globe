@@ -3,8 +3,12 @@
   import { CATEGORIES } from '../../lib/constants';
   import { addLocalCard, updateLifecycle } from '../../lib/stores/kanbanState';
   import { WORKFLOW_CHAINS } from '../../lib/workflow/workflowEngine';
+  import { startWorkflow } from '../../lib/stores/workflowState';
+  import { addLog } from '../../lib/stores/activityLog';
   import { buildCommandString, COMMAND_REGISTRY } from '../../lib/workflow/commandRegistry';
   import FileDropZone from './FileDropZone.svelte';
+
+  const EVENT_SERVER = 'http://localhost:4010';
 
   interface Props {
     onClose: () => void;
@@ -45,29 +49,85 @@
     files = incoming;
   }
 
-  function createCard(andStart: boolean) {
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        resolve(result.split(',')[1] || '');
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function uploadFiles(upPath: string, fileList: File[], cardId: string): Promise<boolean> {
+    if (fileList.length === 0) return true;
+    try {
+      const fileData = await Promise.all(
+        fileList.map(async (f) => ({ name: f.name, data: await fileToBase64(f) }))
+      );
+      const res = await fetch(`${EVENT_SERVER}/card/upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uploadPath: upPath, files: fileData, cardId }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  let launching = $state(false);
+
+  async function createCard(mode: 'draft' | 'start' | 'launch') {
     if (!title.trim()) return;
     const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
     addLocalCard({
       id,
       title: title.trim(),
+      description: description.trim() || undefined,
       section: effectiveSection || undefined,
-      column: andStart ? 'design' : 'create',
+      column: mode === 'draft' ? 'create' : 'design',
       type: cardType,
       uploadPath: uploadPath ?? undefined,
       createdAt: Date.now(),
     });
 
-    if (andStart) {
+    // Upload files if any
+    if (files.length > 0 && uploadPath) {
+      await uploadFiles(uploadPath, files, id);
+    }
+
+    // Start workflow for non-draft cards
+    if (mode !== 'draft') {
+      startWorkflow(id, chainId);
       updateLifecycle(id, 'started');
 
-      // Build command and copy to clipboard
       const cmd = cardType === 'issue' ? '/issue' : '/chore';
-      const cmdStr = uploadPath
-        ? `${cmd} '${uploadPath}'`
-        : `${cmd} "${title.trim()}"`;
+      const args = uploadPath
+        ? `'${uploadPath}'`
+        : `"${title.trim()}"`;
+      const cmdStr = `${cmd} ${args}`;
       navigator.clipboard.writeText(cmdStr);
+
+      if (mode === 'launch') {
+        launching = true;
+        try {
+          const res = await fetch(`${EVENT_SERVER}/agent/launch`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command: cmd, args, cardId: id }),
+          });
+          const data = await res.json();
+          if (res.ok && data.sessionId) {
+            addLog(id, 'agent:launched', { command: cmd, args, sessionId: data.sessionId, pid: data.pid });
+            updateLifecycle(id, 'running');
+          }
+        } catch { /* non-critical */ }
+        launching = false;
+      }
     }
 
     onClose();
@@ -143,10 +203,13 @@
 
     <!-- Actions -->
     <div class="dialog-actions">
-      <button class="btn btn-primary" onclick={() => createCard(true)} disabled={!title.trim()}>
-        Create & Start
+      <button class="btn btn-launch" onclick={() => createCard('launch')} disabled={!title.trim() || launching}>
+        {launching ? 'Launching...' : 'Create & Launch Claude'}
       </button>
-      <button class="btn btn-secondary" onclick={() => createCard(false)} disabled={!title.trim()}>
+      <button class="btn btn-primary" onclick={() => createCard('start')} disabled={!title.trim()}>
+        Create & Copy Command
+      </button>
+      <button class="btn btn-secondary" onclick={() => createCard('draft')} disabled={!title.trim()}>
         Create as Draft
       </button>
       <button class="btn btn-ghost" onclick={onClose}>Cancel</button>
@@ -192,6 +255,8 @@
     font-family: inherit; cursor: pointer; font-weight: 600;
   }
   .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .btn-launch { background: rgba(0,255,136,0.15); color: #00ff88; border: 1px solid rgba(0,255,136,0.3); }
+  .btn-launch:hover:not(:disabled) { background: rgba(0,255,136,0.25); }
   .btn-primary { background: rgba(0,229,255,0.15); color: #00e5ff; border: 1px solid rgba(0,229,255,0.3); }
   .btn-primary:hover:not(:disabled) { background: rgba(0,229,255,0.25); }
   .btn-secondary { background: rgba(255,255,255,0.05); color: #aaa; border: 1px solid rgba(255,255,255,0.08); }

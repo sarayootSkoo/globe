@@ -8,7 +8,7 @@
     card: KanbanCard;
     fromColumn: string;
     toColumn: string;
-    onConfirm: (copyCommand: boolean) => void;
+    onConfirm: (copyCommand: boolean, launchClaude?: boolean) => void;
     onCancel: () => void;
   }
 
@@ -22,7 +22,11 @@
 
   function handleCopy() {
     if (commandStr) navigator.clipboard.writeText(commandStr);
-    onConfirm(true);
+    onConfirm(true, false);
+  }
+
+  function handleLaunch() {
+    onConfirm(false, true);
   }
 </script>
 
@@ -66,7 +70,8 @@
     {/if}
 
     <div class="dialog-actions">
-      <button class="btn btn-primary" onclick={handleCopy}>Start & Copy Command</button>
+      <button class="btn btn-launch" onclick={handleLaunch}>Launch Claude Agent</button>
+      <button class="btn btn-primary" onclick={handleCopy}>Copy Command Only</button>
       <button class="btn btn-secondary" onclick={() => onConfirm(false)}>Start without Command</button>
       <button class="btn btn-ghost" onclick={onCancel}>Cancel</button>
     </div>
@@ -142,6 +147,12 @@
     cursor: pointer;
     font-weight: 600;
   }
+  .btn-launch {
+    background: rgba(0,255,136,0.15);
+    color: #00ff88;
+    border: 1px solid rgba(0,255,136,0.3);
+  }
+  .btn-launch:hover { background: rgba(0,255,136,0.25); }
   .btn-primary {
     background: rgba(0,229,255,0.15);
     color: #00e5ff;

@@ -11,17 +11,18 @@
 // ── Storage Keys ─────────────────────────────────────────────────────────────
 
 export const DB_KEYS = {
-  agents:       'kg-kanban-agents',
-  moves:        'kg-kanban-moves',
-  cards:        'kg-kanban-local-cards',
-  lifecycle:    'kg-kanban-lifecycle',
-  iterations:   'kg-kanban-iterations',
-  workflows:    'kg-kanban-workflows',
-  commands:     'kg-kanban-command-queue',
-  sessions:     'kg-kanban-sessions',
-  history:      'kg-kanban-history',
-  settings:     'kg-kanban-settings',
-  dependencies: 'kg-kanban-dependencies',
+  agents:         'kg-kanban-agents',
+  moves:          'kg-kanban-moves',
+  cards:          'kg-kanban-local-cards',
+  lifecycle:      'kg-kanban-lifecycle',
+  iterations:     'kg-kanban-iterations',
+  workflows:      'kg-kanban-workflows',
+  commands:       'kg-kanban-command-queue',
+  sessions:       'kg-kanban-sessions',
+  history:        'kg-kanban-history',
+  settings:       'kg-kanban-settings',
+  dependencies:   'kg-kanban-dependencies',
+  cardUpdatedAt:  'kg-kanban-card-updated-at',
 } as const;
 
 export type DBTable = keyof typeof DB_KEYS;
@@ -211,7 +212,8 @@ export const kanbanDB = {
   moves:        makeAccessor<Record<string, string>>('moves'),
   lifecycle:    makeAccessor<Record<string, unknown>>('lifecycle'),
   iterations:   makeAccessor<Record<string, unknown>>('iterations'),
-  dependencies: makeAccessor<Record<string, string[]>>('dependencies'),
+  dependencies:  makeAccessor<Record<string, string[]>>('dependencies'),
+  cardUpdatedAt: makeAccessor<Record<string, number>>('cardUpdatedAt'),
 };
 
 export default kanbanDB;

@@ -2,6 +2,7 @@
   import { currentMode, pathSelection, selectedNodeId, viewMode } from '../../lib/stores/appState';
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
   import { showCrossRepo, crossRepoFilter } from '../../lib/stores/crossRepoState';
+  import { navigateTo } from '../../lib/router';
   import type { AppMode } from '../../lib/stores/appState';
   import type { GraphNode, GraphLink, ViewMode } from '../../lib/types';
 
@@ -38,7 +39,7 @@
   let kanbanActive = $derived(currentView === 'kanban');
 
   function handleKanban(): void {
-    viewMode.update(v => v === 'kanban' ? 'globe' : 'kanban');
+    navigateTo(currentView === 'kanban' ? 'globe' : 'kanban');
   }
 
   function handlePath(): void {

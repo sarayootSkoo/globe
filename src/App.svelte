@@ -112,10 +112,12 @@
   }
 </script>
 
-<!-- Background layers -->
-<Scanline />
-<ParticleCanvas />
-<BorderMagic />
+<!-- Background layers (disabled on board to save battery) -->
+{#if currentView !== 'kanban'}
+  <Scanline />
+  <ParticleCanvas />
+  <BorderMagic />
+{/if}
 <Corners />
 
 {#if loaded}

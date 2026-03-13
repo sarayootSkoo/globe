@@ -272,6 +272,7 @@ export type KanbanEventType =
   | 'card:deleted'
   // Lifecycle events
   | 'lifecycle:started'
+  | 'lifecycle:running'
   | 'lifecycle:paused'
   | 'lifecycle:resumed'
   | 'lifecycle:completed'
