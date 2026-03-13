@@ -163,6 +163,31 @@ function processEvent(event: KanbanEvent): void {
         }
         break;
 
+      case 'lifecycle:paused':
+        next.set(nodeId, {
+          ...current,
+          state: 'idle',
+          lastAction: message || `Paused (${(data?.reason as string) || 'user'})`,
+        });
+        if (cardId) {
+          updateLifecycle(cardId, 'paused', (data?.reason as string) || 'user_pause');
+          addLog(cardId, 'lifecycle:paused', { message, reason: data?.reason });
+        }
+        break;
+
+      case 'lifecycle:resumed':
+        next.set(nodeId, {
+          ...current,
+          state: 'working',
+          lastAction: message || 'Resumed',
+          progress: current.progress ?? 0,
+        });
+        if (cardId) {
+          updateLifecycle(cardId, 'running');
+          addLog(cardId, 'lifecycle:resumed', { message });
+        }
+        break;
+
       case 'lifecycle:completed':
         next.set(nodeId, { ...current, state: 'done', progress: 100, lastAction: message || 'Completed' });
         if (cardId) {

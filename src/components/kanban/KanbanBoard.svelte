@@ -287,7 +287,14 @@
 
   function handlePause(reason: PauseReason, note: string) {
     if (pauseDialogCard) {
-      updateLifecycle(pauseDialogCard.node.id, 'paused', reason);
+      const cardId = pauseDialogCard.node.id;
+      updateLifecycle(cardId, 'paused', reason);
+      // Send SIGSTOP to the actual agent process
+      fetch(`${EVENT_SERVER}/agent/pause`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardId, reason }),
+      }).catch(() => { /* best-effort */ });
     }
     pauseDialogCard = null;
   }
@@ -295,18 +302,26 @@
   function handleResume(copyCommand: boolean, launchClaude: boolean = false) {
     if (resumeDialogCard) {
       const card = resumeDialogCard;
-      updateLifecycle(card.node.id, 'running');
+      const cardId = card.node.id;
+      updateLifecycle(cardId, 'running');
+
+      // Send SIGCONT to resume the paused agent process
+      fetch(`${EVENT_SERVER}/agent/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardId }),
+      }).catch(() => { /* best-effort */ });
 
       // Determine command: use lastCommand, or derive from card's current column
       const command = card.lastCommand || getCommandsForColumn(card.status)[0] || null;
 
       if (launchClaude && command) {
         const args = card.artifactPath ? `'${card.artifactPath}'` : `"${card.node.label}"`;
-        launchAgent(command, args, card.node.id);
+        launchAgent(command, args, cardId);
       } else if (copyCommand && command) {
         const cmdStr = buildCommandString(card, command);
         if (cmdStr) navigator.clipboard.writeText(cmdStr);
-        addLog(card.node.id, 'command:copied', { command: cmdStr });
+        addLog(cardId, 'command:copied', { command: cmdStr });
       }
     }
     resumeDialogCard = null;

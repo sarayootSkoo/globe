@@ -789,6 +789,110 @@ async function handleRequest(req, res) {
     return;
   }
 
+  // ── POST /agent/pause — suspend a running agent (SIGSTOP) ────────────────
+  if (req.method === 'POST' && urlPath === '/agent/pause') {
+    let body;
+    try { body = await readBody(req); }
+    catch {
+      send(res, 400, { error: 'Invalid JSON' }, cors);
+      return;
+    }
+
+    const { sessionId: targetId, cardId = null, reason = 'user_pause' } = body;
+
+    // Collect matching sessions
+    const toPause = [];
+    for (const [sid, s] of agentStatuses) {
+      if (targetId && sid === targetId) toPause.push(sid);
+      else if (cardId && s.cardId === cardId) toPause.push(sid);
+    }
+
+    let paused = 0;
+    for (const sid of toPause) {
+      const child = agentProcesses.get(sid);
+      if (child && !child.killed) {
+        try {
+          child.kill('SIGSTOP');
+          paused++;
+        } catch { /* already dead */ }
+      }
+      // Update status
+      const s = agentStatuses.get(sid);
+      if (s) {
+        s.state = 'paused';
+        s.pauseReason = reason;
+        agentStatuses.set(sid, s);
+      }
+
+      // Broadcast pause event
+      const pauseEvent = {
+        id: randomUUID(),
+        type: 'lifecycle:paused',
+        timestamp: new Date().toISOString(),
+        source: 'ui',
+        cardId: s?.cardId || cardId,
+        data: { sessionId: sid, cardId: s?.cardId || cardId, reason },
+      };
+      addEvent(pauseEvent);
+      broadcast({ type: 'event', event: pauseEvent });
+    }
+
+    send(res, 200, { paused, sessions: toPause }, cors);
+    return;
+  }
+
+  // ── POST /agent/resume — resume a paused agent (SIGCONT) ────────────────
+  if (req.method === 'POST' && urlPath === '/agent/resume') {
+    let body;
+    try { body = await readBody(req); }
+    catch {
+      send(res, 400, { error: 'Invalid JSON' }, cors);
+      return;
+    }
+
+    const { sessionId: targetId, cardId = null } = body;
+
+    // Collect matching sessions
+    const toResume = [];
+    for (const [sid, s] of agentStatuses) {
+      if (targetId && sid === targetId) toResume.push(sid);
+      else if (cardId && s.cardId === cardId) toResume.push(sid);
+    }
+
+    let resumed = 0;
+    for (const sid of toResume) {
+      const child = agentProcesses.get(sid);
+      if (child && !child.killed) {
+        try {
+          child.kill('SIGCONT');
+          resumed++;
+        } catch { /* already dead */ }
+      }
+      // Update status
+      const s = agentStatuses.get(sid);
+      if (s) {
+        s.state = 'running';
+        s.pauseReason = null;
+        agentStatuses.set(sid, s);
+      }
+
+      // Broadcast resume event
+      const resumeEvent = {
+        id: randomUUID(),
+        type: 'lifecycle:resumed',
+        timestamp: new Date().toISOString(),
+        source: 'ui',
+        cardId: s?.cardId || cardId,
+        data: { sessionId: sid, cardId: s?.cardId || cardId },
+      };
+      addEvent(resumeEvent);
+      broadcast({ type: 'event', event: resumeEvent });
+    }
+
+    send(res, 200, { resumed, sessions: toResume }, cors);
+    return;
+  }
+
   // ── POST /agent/stop — kill a running agent session ──────────────────────
   if (req.method === 'POST' && urlPath === '/agent/stop') {
     let body;
