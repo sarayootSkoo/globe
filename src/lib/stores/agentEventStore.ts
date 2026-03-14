@@ -42,12 +42,38 @@ registerHealthLiveStatuses(agentLiveStatuses);
 
 const MAX_CONSOLE_LINES = 500;
 
+// Batched console line appending — collects lines and flushes once per frame
+let pendingLines = new Map<string, ConsoleLine[]>();
+let flushScheduled = false;
+
 function appendConsoleLine(key: string, line: ConsoleLine): void {
+  const pending = pendingLines.get(key);
+  if (pending) {
+    pending.push(line);
+  } else {
+    pendingLines.set(key, [line]);
+  }
+
+  if (!flushScheduled) {
+    flushScheduled = true;
+    requestAnimationFrame(flushConsoleLines);
+  }
+}
+
+function flushConsoleLines(): void {
+  flushScheduled = false;
+  if (pendingLines.size === 0) return;
+
   agentConsoleOutput.update(map => {
     const next = new Map(map);
-    const existing = next.get(key) ?? [];
-    const updated = [...existing, line];
-    next.set(key, updated.length > MAX_CONSOLE_LINES ? updated.slice(updated.length - MAX_CONSOLE_LINES) : updated);
+    for (const [key, newLines] of pendingLines) {
+      const existing = next.get(key) ?? [];
+      const combined = existing.concat(newLines);
+      next.set(key, combined.length > MAX_CONSOLE_LINES
+        ? combined.slice(combined.length - MAX_CONSOLE_LINES)
+        : combined);
+    }
+    pendingLines = new Map();
     return next;
   });
 }
