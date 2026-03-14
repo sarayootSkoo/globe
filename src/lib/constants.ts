@@ -1,4 +1,5 @@
 import type { Category } from './types';
+import { kanbanConfig } from './stores/kanbanConfig';
 
 // Default categories — overridden by graph-config.json at runtime
 export let CATEGORIES: Record<string, Category> = {
@@ -8,10 +9,21 @@ export let CATEGORIES: Record<string, Category> = {
   'oms-help':   { label: 'Webapp Help',  color: '#ffcc00', glow: 'rgba(255,204,0,0.55)' },
 };
 
+// Sync CATEGORIES from kanbanConfig.projects
+kanbanConfig.subscribe(cfg => {
+  if (cfg.projects?.length) {
+    const cats: Record<string, Category> = {};
+    for (const p of cfg.projects) {
+      cats[p.id] = { label: p.label, color: p.color, glow: p.glow };
+    }
+    CATEGORIES = { ...CATEGORIES, ...cats };
+  }
+});
+
 /** Update categories from external config */
 export function setCategories(cats: Record<string, Category>): void {
   if (cats && Object.keys(cats).length > 0) {
-    CATEGORIES = cats;
+    CATEGORIES = { ...CATEGORIES, ...cats };
   }
 }
 

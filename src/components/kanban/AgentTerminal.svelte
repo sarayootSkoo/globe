@@ -5,8 +5,10 @@
     wsConnected,
     loadLogsForCard,
     markSessionClosed,
+    ptySessionMap,
   } from '../../lib/stores/agentEventStore';
-  import { kanbanCards } from '../../lib/stores/kanbanState';
+  import { kanbanCards, updateLifecycle } from '../../lib/stores/kanbanState';
+  import XtermTerminal from './XtermTerminal.svelte';
   import type { ConsoleLine } from '../../lib/stores/agentEventStore';
   import type { AgentLiveStatus, KanbanCard } from '../../lib/types';
 
@@ -40,6 +42,12 @@
   $effect(() => {
     const u4 = kanbanCards.subscribe(v => { cards = v; });
     return u4;
+  });
+
+  let ptyMap = $state(new Map<string, string>());
+  $effect(() => {
+    const u5 = ptySessionMap.subscribe(v => { ptyMap = v; });
+    return u5;
   });
 
   // ── Active sessions — any key that has output OR a live status ─────────────
@@ -92,10 +100,27 @@
   // ── Per-tab cleared lines (keys cleared by the clear button) ──────────────
   let clearedAt = $state<Map<string, number>>(new Map());
 
-  function clearTab(key: string) {
-    const next = new Map(clearedAt);
-    next.set(key, outputMap.get(key)?.length ?? 0);
-    clearedAt = next;
+  /** Terminate ALL sessions and clear all tabs */
+  function closeAllSessions() {
+    const allKeys = [...sessions()];
+    // Mark all as closed first to prevent ghost events
+    for (const key of allKeys) {
+      markSessionClosed(key);
+      updateLifecycle(key, 'paused', 'user_pause');
+    }
+    // Stop all agents on server in one call
+    fetch(`${EVENT_SERVER}/agent/stop-all`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: 'user_clear_all' }),
+    }).catch(() => { /* best-effort */ });
+    // Clear all stores
+    agentConsoleOutput.set(new Map());
+    agentLiveStatuses.set(new Map());
+    ptySessionMap.set(new Map());
+    clearedAt = new Map();
+    loadedKeys = new Set();
+    activeTab = null;
   }
 
   /** Close a session tab — stops the agent process, removes output + status, switches to next tab */
@@ -110,9 +135,13 @@
       body: JSON.stringify({ cardId: key, sessionId: key }),
     }).catch(() => { /* best-effort */ });
 
+    // Reset card lifecycle to paused (user manually closed)
+    updateLifecycle(key, 'paused', 'user_pause');
+
     // Remove from stores
     agentConsoleOutput.update(m => { const next = new Map(m); next.delete(key); return next; });
     agentLiveStatuses.update(m => { const next = new Map(m); next.delete(key); return next; });
+    ptySessionMap.update(m => { const next = new Map(m); next.delete(key); return next; });
     // Clean up local state
     const nextCleared = new Map(clearedAt);
     nextCleared.delete(key);
@@ -344,13 +373,13 @@
       </div>
 
       <div class="tab-bar-right">
-        {#if activeTab}
+        {#if sessions().length > 0}
           <button
             class="clear-btn"
-            onclick={() => activeTab && clearTab(activeTab)}
-            title="Clear output"
+            onclick={closeAllSessions}
+            title="Terminate all agents and close all tabs"
           >
-            Clear
+            Clear All
           </button>
         {/if}
         <button class="close-btn" onclick={togglePanel} title="Minimize terminal">&#x2715;</button>
@@ -358,30 +387,38 @@
     </div>
 
     <!-- Terminal body -->
-    <div class="terminal-body" bind:this={bodyEl}>
-      {#if sessions().length === 0}
+    {#if sessions().length === 0}
+      <div class="terminal-body" bind:this={bodyEl}>
         <div class="no-agents">
           <span class="no-agents-icon">&#x276F;_</span>
           <span>No active agents</span>
           <span class="no-agents-sub">Launch a Claude agent to see output here</span>
         </div>
-      {:else if activeTab}
-        {@const lines = visibleLines(activeTab)}
-        {#if lines.length === 0}
+      </div>
+    {:else if activeTab && ptyMap.has(activeTab)}
+      <!-- PTY session: render full xterm.js terminal -->
+      <div class="terminal-body xterm-body">
+        <XtermTerminal sessionId={ptyMap.get(activeTab) ?? ''} cardId={activeTab} />
+      </div>
+    {:else if activeTab}
+      <div class="terminal-body" bind:this={bodyEl}>
+        {#if visibleLines(activeTab).length === 0}
           <div class="empty-output">No output yet...</div>
         {:else}
-          {#each lines as line (line.timestamp + line.text)}
+          {#each visibleLines(activeTab) as line (line.timestamp + line.text)}
             <div class="line" class:line-stderr={line.stream === 'stderr'}>
               <span class="line-ts">[{formatTime(line.timestamp)}]</span>
               <span class="line-text">{line.text}</span>
             </div>
           {/each}
         {/if}
-      {/if}
-    </div>
+      </div>
+    {:else}
+      <div class="terminal-body" bind:this={bodyEl}></div>
+    {/if}
 
-    <!-- Input bar for sending messages to agent -->
-    {#if activeTab}
+    <!-- Input bar for non-PTY sessions (PTY sessions handle input via xterm) -->
+    {#if activeTab && !ptyMap.has(activeTab)}
       <div class="input-bar">
         <span class="input-prompt">&#x276F;</span>
         <input
@@ -709,6 +746,10 @@
     color: #b8c0cc;
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  }
+  .terminal-body.xterm-body {
+    padding: 0;
+    overflow: hidden;
   }
   .terminal-body::-webkit-scrollbar {
     width: 6px;

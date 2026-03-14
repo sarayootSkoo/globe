@@ -2,7 +2,7 @@ import { writable } from 'svelte/store';
 import { CATEGORIES } from '../constants';
 
 export type AppMode = 'explore' | 'path' | 'impact';
-export type ViewMode = 'globe' | 'kanban';
+export type ViewMode = 'globe' | 'kanban' | 'analytics';
 export type Theme = 'dark' | 'light' | 'fire' | 'winter' | 'galaxy' | 'electric' | 'void' | 'aurora' | 'rain' | 'polygon';
 
 /**
@@ -46,3 +46,6 @@ export const immersiveMode = writable<boolean>(false);
 
 /** Dashboard view mode — globe (3D) or kanban (task board in 3D) */
 export const viewMode = writable<ViewMode>('globe');
+
+/** Globe preview mode — renders 3D globe behind kanban CommandPanel (no overlays) */
+export const globePreview = writable<boolean>(false);

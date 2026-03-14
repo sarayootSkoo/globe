@@ -12,7 +12,7 @@
   import { GlobeAutoTour } from '../../lib/renderers/GlobeAutoTour';
   import { GlobeFireworks } from '../../lib/renderers/GlobeFireworks';
   import { graphNodes, graphLinks } from '../../lib/stores/graphData';
-  import { glowLevel, selectedNodeId, theme, activeCats, currentMode, viewMode } from '../../lib/stores/appState';
+  import { glowLevel, selectedNodeId, theme, activeCats, currentMode, viewMode, globePreview } from '../../lib/stores/appState';
   import { kanbanColumns } from '../../lib/stores/kanbanState';
   import { CATEGORIES } from '../../lib/constants';
   import * as fx from '../../lib/stores/themeEffects';
@@ -453,11 +453,27 @@
     // ── React to viewMode changes (globe ↔ kanban) ─────────────────────────
     const unsubViewMode = viewMode.subscribe(v => {
       if (!renderer) return;
+      // When globePreview is active, always show globe mode
+      if (get(globePreview)) {
+        renderer.showGlobe();
+        return;
+      }
       if (v === 'kanban') {
         const cols = get(kanbanColumns);
         renderer.showKanban(cols, CATEGORIES);
       } else {
         renderer.showGlobe();
+      }
+    });
+
+    // ── React to globePreview toggle ──────────────────────────────────────
+    const unsubGlobePreview = globePreview.subscribe(gp => {
+      if (!renderer) return;
+      if (gp) {
+        renderer.showGlobe();
+      } else if (get(viewMode) === 'kanban') {
+        const cols = get(kanbanColumns);
+        renderer.showKanban(cols, CATEGORIES);
       }
     });
 
@@ -577,6 +593,7 @@
       unsubBloomT();
       unsubPolyGradHue();
       unsubViewMode();
+      unsubGlobePreview();
     };
   });
 

@@ -1,136 +1,99 @@
 /**
- * kanbanDB.ts — Unified localStorage Manager
+ * kanbanDB.ts — Unified DB Manager (memory cache + SQLite)
  *
- * Centralises all localStorage keys into one module and provides typed
- * get / set / delete helpers with 100ms debounced writes.
+ * NO localStorage. All persistence via SQLite through event-server API.
  *
- * Tables mirror the existing scattered keys across kanbanState, workflowState,
- * and commandState — no existing stores need to change.
+ *   init():   SQLite → memory cache (async, called once before app renders)
+ *   get():    memory cache (sync, instant)
+ *   set():    memory cache (sync) + SQLite (async, debounced 300ms)
  */
 
-// ── Storage Keys ─────────────────────────────────────────────────────────────
+// ── Table Keys ──────────────────────────────────────────────────────────────
 
 export const DB_KEYS = {
-  agents:         'kg-kanban-agents',
-  moves:          'kg-kanban-moves',
-  cards:          'kg-kanban-local-cards',
-  lifecycle:      'kg-kanban-lifecycle',
-  iterations:     'kg-kanban-iterations',
-  workflows:      'kg-kanban-workflows',
-  commands:       'kg-kanban-command-queue',
-  sessions:       'kg-kanban-sessions',
-  history:        'kg-kanban-history',
-  settings:       'kg-kanban-settings',
-  dependencies:   'kg-kanban-dependencies',
-  cardUpdatedAt:  'kg-kanban-card-updated-at',
+  agents:           'agents',
+  moves:            'moves',
+  cards:            'cards',
+  lifecycle:        'lifecycle',
+  iterations:       'iterations',
+  workflows:        'workflows',
+  commands:         'commands',
+  sessions:         'sessions',
+  history:          'history',
+  settings:         'settings',
+  dependencies:     'dependencies',
+  cardUpdatedAt:    'cardUpdatedAt',
+  cardOrder:        'cardOrder',
+  config:           'config',
+  iterHistory:      'iterHistory',
+  commandPanel:     'commandPanel',
+  previewWidth:     'previewWidth',
+  uiState:          'uiState',
 } as const;
 
 export type DBTable = keyof typeof DB_KEYS;
 
-// ── Debounce helper ───────────────────────────────────────────────────────────
+// ── In-Memory Cache ─────────────────────────────────────────────────────────
+
+const cache = new Map<string, string>();
+
+// ── Debounce ────────────────────────────────────────────────────────────────
 
 function makeDebounce(ms: number) {
   const timers = new Map<string, ReturnType<typeof setTimeout>>();
   return function debounce(key: string, fn: () => void): void {
     const existing = timers.get(key);
     if (existing !== undefined) clearTimeout(existing);
-    timers.set(key, setTimeout(() => {
-      fn();
-      timers.delete(key);
-    }, ms));
+    timers.set(key, setTimeout(() => { fn(); timers.delete(key); }, ms));
   };
 }
 
-const debounce = makeDebounce(100);
+const dbDebounce = makeDebounce(300);
 
-// ── Core read / write helpers ─────────────────────────────────────────────────
+// ── SQLite API ──────────────────────────────────────────────────────────────
 
-function readRaw(storageKey: string): string | null {
-  try {
-    return localStorage.getItem(storageKey);
-  } catch {
-    return null;
-  }
+const DB_API = 'http://localhost:4010';
+
+function pushToSqlite(table: string, value: unknown): void {
+  dbDebounce(`db:${table}`, () => {
+    fetch(`${DB_API}/db/state`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { [`ls:${table}`]: value } }),
+    }).catch(() => {});
+  });
 }
 
-function writeRaw(storageKey: string, value: string): void {
-  try {
-    localStorage.setItem(storageKey, value);
-  } catch {
-    // Storage full or unavailable — silently ignore
-  }
+// ── Core read / write (memory only) ─────────────────────────────────────────
+
+function readRaw(key: string): string | null {
+  return cache.get(key) ?? null;
 }
 
-function deleteRaw(storageKey: string): void {
-  try {
-    localStorage.removeItem(storageKey);
-  } catch {
-    // Silently ignore
-  }
+function writeRaw(key: string, value: string): void {
+  cache.set(key, value);
 }
 
-// ── Typed DB API ──────────────────────────────────────────────────────────────
+// ── Typed API ───────────────────────────────────────────────────────────────
 
-/**
- * Read a table as a parsed JSON value, returning `fallback` on miss/error.
- */
 function get<T>(table: DBTable, fallback: T): T {
   const raw = readRaw(DB_KEYS[table]);
   if (raw === null) return fallback;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return fallback;
-  }
+  try { return JSON.parse(raw) as T; }
+  catch { return fallback; }
 }
 
-/**
- * Write a value to a table. The actual localStorage write is debounced 100ms
- * so rapid successive updates are coalesced.
- */
 function set<T>(table: DBTable, value: T): void {
-  const key = DB_KEYS[table];
-  const serialised = JSON.stringify(value);
-  debounce(key, () => writeRaw(key, serialised));
+  writeRaw(DB_KEYS[table], JSON.stringify(value));
+  pushToSqlite(table, value);
 }
 
-/**
- * Remove a table entry immediately (no debounce — intentional deletion).
- */
 function del(table: DBTable): void {
-  deleteRaw(DB_KEYS[table]);
+  cache.delete(DB_KEYS[table]);
+  pushToSqlite(table, null);
 }
 
-// ── Stale-data cleanup ────────────────────────────────────────────────────────
-
-/**
- * Remove any kg-kanban-* keys from localStorage that are not part of the
- * current schema. Call this once at app start to evict legacy data.
- */
-function cleanup(): void {
-  const validKeys = new Set(Object.values(DB_KEYS));
-  const toRemove: string[] = [];
-
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('kg-kanban-') && !(validKeys as Set<string>).has(k)) {
-        toRemove.push(k);
-      }
-    }
-    for (const k of toRemove) {
-      localStorage.removeItem(k);
-    }
-  } catch {
-    // Ignore storage errors during cleanup
-  }
-}
-
-// ── Per-table typed convenience accessors ─────────────────────────────────────
-//
-// Each accessor delegates to get/set/del with the correct table name.
-// This gives call sites a clean, self-documenting API:
-//   kanbanDB.cards.get({})  vs  kanbanDB.get('cards', {})
+// ── Accessors ───────────────────────────────────────────────────────────────
 
 function makeAccessor<T>(table: DBTable) {
   return {
@@ -142,78 +105,193 @@ function makeAccessor<T>(table: DBTable) {
 
 // ── Storage monitoring ──────────────────────────────────────────────────────
 
-/** Returns total bytes used by kg-kanban-* keys and a warning if over 1.5MB */
 function getStorageUsage(): { bytes: number; formatted: string; warning: boolean } {
   let total = 0;
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('kg-kanban-')) {
-        const v = localStorage.getItem(k);
-        if (v) total += k.length + v.length;
-      }
-    }
-  } catch {
-    // Ignore storage errors
-  }
-  const bytes = total * 2; // UTF-16 chars = 2 bytes each
+  for (const [k, v] of cache.entries()) total += k.length + v.length;
+  const bytes = total * 2;
   const kb = bytes / 1024;
-  const formatted = kb < 1024 ? `${kb.toFixed(1)} KB` : `${(kb / 1024).toFixed(2)} MB`;
-  const warning = bytes > 1.5 * 1024 * 1024; // warn at 1.5MB
-  return { bytes, formatted, warning };
+  return {
+    bytes,
+    formatted: kb < 1024 ? `${kb.toFixed(1)} KB` : `${(kb / 1024).toFixed(2)} MB`,
+    warning: bytes > 1.5 * 1024 * 1024,
+  };
 }
 
-// ── Public export ─────────────────────────────────────────────────────────────
+// ── Board Export ────────────────────────────────────────────────────────────
 
-// ── Board Export ──────────────────────────────────────────────────────────────
-
-/**
- * Serialise the entire board state from localStorage into a JSON string.
- * Intended to be POSTed to the local event-server so it can write
- * `.kanban/board.json` for the MCP server to read.
- */
 export function exportBoardState(): string {
-  const cards     = get('cards',        {});
-  const lifecycle = get('lifecycle',     {});
-  const agents    = get('agents',        {});
-  const workflows = get('workflows',     {});
-  const moves     = get('moves',         {});
-  const iterations  = get('iterations',  {});
-  const dependencies = get('dependencies', {});
-
   return JSON.stringify({
-    cards,
-    lifecycle,
-    agents,
-    workflows,
-    moves,
-    iterations,
-    dependencies,
-    exportedAt: Date.now(),
+    cards:        get('cards', {}),
+    lifecycle:    get('lifecycle', {}),
+    agents:       get('agents', {}),
+    workflows:    get('workflows', {}),
+    moves:        get('moves', {}),
+    iterations:   get('iterations', {}),
+    dependencies: get('dependencies', {}),
+    config:       get('config', {}),
+    exportedAt:   Date.now(),
   }, null, 2);
 }
 
-export const kanbanDB = {
-  // Generic access
-  get,
-  set,
-  del,
-  cleanup,
-  getStorageUsage,
+// ── Init: load from SQLite (async, call before app renders) ─────────────────
 
-  // Per-table typed helpers
-  cards:      makeAccessor<Record<string, unknown>>('cards'),
-  workflows:  makeAccessor<Record<string, unknown>>('workflows'),
-  commands:   makeAccessor<unknown[]>('commands'),
-  sessions:   makeAccessor<Record<string, unknown>>('sessions'),
-  history:    makeAccessor<unknown[]>('history'),
-  settings:   makeAccessor<Record<string, unknown>>('settings'),
-  agents:       makeAccessor<Record<string, string>>('agents'),
-  moves:        makeAccessor<Record<string, string>>('moves'),
-  lifecycle:    makeAccessor<Record<string, unknown>>('lifecycle'),
-  iterations:   makeAccessor<Record<string, unknown>>('iterations'),
+let _initialized = false;
+
+/**
+ * Initialize: migrate localStorage → SQLite (once), then load from SQLite.
+ * Must be called and awaited BEFORE stores read from cache.
+ */
+export async function init(): Promise<{ ok: boolean; tables: number }> {
+  // Step 1: Migrate localStorage → SQLite (one-time)
+  await migrateLocalStorageToSqlite();
+
+  // Step 2: Load from SQLite → memory cache
+  try {
+    const resp = await fetch(`${DB_API}/db/state`);
+    if (!resp.ok) return { ok: false, tables: 0 };
+    const data = await resp.json();
+
+    let tables = 0;
+    if (data.settings && typeof data.settings === 'object') {
+      for (const [key, value] of Object.entries(data.settings)) {
+        if (key.startsWith('ls:')) {
+          const table = key.slice(3);
+          const dbKey = DB_KEYS[table as DBTable];
+          if (dbKey) {
+            writeRaw(dbKey, typeof value === 'string' ? value : JSON.stringify(value));
+            tables++;
+          }
+        }
+      }
+    }
+    _initialized = true;
+    return { ok: true, tables };
+  } catch {
+    // SQLite unavailable — cache stays empty, stores use defaults
+    _initialized = true;
+    return { ok: false, tables: 0 };
+  }
+}
+
+/** One-time: push any remaining localStorage data to SQLite, then clear it */
+async function migrateLocalStorageToSqlite(): Promise<void> {
+  try {
+    const toMigrate: Record<string, unknown> = {};
+    let hasData = false;
+
+    // Old key format (kg-kanban-*)
+    const OLD_KEYS: Record<string, string> = {
+      'kg-kanban-agents': 'agents',
+      'kg-kanban-moves': 'moves',
+      'kg-kanban-local-cards': 'cards',
+      'kg-kanban-lifecycle': 'lifecycle',
+      'kg-kanban-iterations': 'iterations',
+      'kg-kanban-workflows': 'workflows',
+      'kg-kanban-command-queue': 'commands',
+      'kg-kanban-sessions': 'sessions',
+      'kg-kanban-history': 'history',
+      'kg-kanban-settings': 'settings',
+      'kg-kanban-dependencies': 'dependencies',
+      'kg-kanban-card-updated-at': 'cardUpdatedAt',
+      'kg-kanban-config': 'config',
+      'kg-kanban-iteration-history': 'iterHistory',
+      'kg-kanban-command-panel': 'commandPanel',
+      'kg-kanban-preview-width': 'previewWidth',
+      'kg-kanban-ui-state': 'uiState',
+    };
+
+    for (const [oldKey, table] of Object.entries(OLD_KEYS)) {
+      const raw = localStorage.getItem(oldKey);
+      if (raw !== null && raw !== '{}' && raw !== '[]' && raw !== 'false') {
+        try { toMigrate[`ls:${table}`] = JSON.parse(raw); }
+        catch { toMigrate[`ls:${table}`] = raw; }
+        hasData = true;
+      }
+    }
+
+    if (!hasData) return;
+
+    // Push to SQLite
+    await fetch(`${DB_API}/db/state`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: toMigrate }),
+    }).catch(() => {});
+
+    // Clear ALL kg-kanban-* from localStorage
+    const toRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('kg-kanban-')) toRemove.push(k);
+    }
+    for (const k of toRemove) localStorage.removeItem(k);
+
+    if (toRemove.length > 0) {
+      console.log(`[kanbanDB] Migrated ${Object.keys(toMigrate).length} tables to SQLite, cleared ${toRemove.length} localStorage keys`);
+    }
+  } catch { /* migration is best-effort */ }
+}
+
+// ── Periodic sync ───────────────────────────────────────────────────────────
+
+let _syncInterval: ReturnType<typeof setInterval> | null = null;
+
+export function startDbSync(intervalMs = 30000): void {
+  if (_syncInterval) return;
+  _syncInterval = setInterval(() => {
+    syncToDb().catch(() => {});
+  }, intervalMs);
+}
+
+export function stopDbSync(): void {
+  if (_syncInterval) { clearInterval(_syncInterval); _syncInterval = null; }
+}
+
+export async function syncToDb(): Promise<{ ok: boolean }> {
+  try {
+    const all: Record<string, unknown> = {};
+    for (const [table] of Object.entries(DB_KEYS)) {
+      const val = get(table as DBTable, null);
+      if (val !== null) all[`ls:${table}`] = val;
+    }
+    const resp = await fetch(`${DB_API}/db/state`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: all }),
+    });
+    return { ok: resp.ok };
+  } catch { return { ok: false }; }
+}
+
+export async function syncFromDb(): Promise<{ ok: boolean; restored?: number }> {
+  return init();
+}
+
+// ── Public API ──────────────────────────────────────────────────────────────
+
+export const kanbanDB = {
+  get, set, del,
+  cleanup: () => {},
+  getStorageUsage,
+  init,
+
+  cards:         makeAccessor<Record<string, unknown>>('cards'),
+  workflows:     makeAccessor<Record<string, unknown>>('workflows'),
+  commands:      makeAccessor<unknown[]>('commands'),
+  sessions:      makeAccessor<Record<string, unknown>>('sessions'),
+  history:       makeAccessor<unknown[]>('history'),
+  settings:      makeAccessor<Record<string, unknown>>('settings'),
+  agents:        makeAccessor<Record<string, string>>('agents'),
+  moves:         makeAccessor<Record<string, string>>('moves'),
+  lifecycle:     makeAccessor<Record<string, unknown>>('lifecycle'),
+  iterations:    makeAccessor<Record<string, unknown>>('iterations'),
   dependencies:  makeAccessor<Record<string, string[]>>('dependencies'),
   cardUpdatedAt: makeAccessor<Record<string, number>>('cardUpdatedAt'),
+  config:        makeAccessor<Record<string, unknown>>('config'),
+  iterHistory:   makeAccessor<Record<string, unknown[]>>('iterHistory'),
+  commandPanel:  makeAccessor<boolean>('commandPanel'),
+  previewWidth:  makeAccessor<number>('previewWidth'),
+  uiState:       makeAccessor<Record<string, unknown>>('uiState'),
 };
 
 export default kanbanDB;

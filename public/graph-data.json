@@ -1,9 +1,9 @@
 {
-  "generated": "2026-03-12T11:20:41.144Z",
+  "generated": "2026-03-13T18:59:23.304Z",
   "root": "/Users/grammer/Documents/git-central/knowledge/docs",
   "stats": {
-    "totalFiles": 609,
-    "totalLinks": 181,
+    "totalFiles": 614,
+    "totalLinks": 186,
     "categories": [
       "core",
       "oms-order",
@@ -12,7 +12,7 @@
     ],
     "statusCounts": {
       "done": 434,
-      "in-progress": 99,
+      "in-progress": 104,
       "planned": 30,
       "hold": 0
     },
@@ -31,9 +31,9 @@
       "id": "_e2e-test-temp",
       "label": "_e2e-test-temp",
       "cat": "core",
-      "desc": "Generated: 2026-03-12T11:20:40.175Z",
+      "desc": "Generated: 2026-03-13T16:19:50.924Z",
       "file": "_e2e-test-temp.md",
-      "preview": "# E2E Test\n\nGenerated: 2026-03-12T11:20:40.175Z\n"
+      "preview": "# E2E Test\n\nGenerated: 2026-03-13T16:19:50.924Z\n"
     },
     {
       "id": "oms-order-discuss-chore-03_03_2026_22_06_00-process-notification-performance-tuning",
@@ -51,15 +51,6 @@
       "desc": "adw_id: `flow`",
       "file": "oms-order-discuss/chore-10_03_2026_13_06_20-flow-add-orgid-orderline-fulfillment-detail.md",
       "preview": "# Chore: เพิ่ม org_id ใน order_lines และ fulfillment_details เพื่อป้องกัน orderId ซ้ำข้าม org\n\n## Metadata\nadw_id: `flow`\nprompt: `new column org_id insert orgorderLine and fulfillmentDetail at table protect orderid duplication because orgId not relate table data and scan table relate need orgId`\ndatetime: `10-03-2026 13:06:20`\n\n---\n\n## Chore Description\nตาราง `order_lines` และ `fulfillment_details` ไม่มี column `org_id` ทั้งที่ตาราง related อื่นๆ ทั้งหมดมีแล้ว (`orders`, `quantity_details`, `re",
-      "status": "planned"
-    },
-    {
-      "id": "oms-order-discuss-deduct-stock-substitute-12_03_2026_18_07_50",
-      "label": "deduct-stock-substitute-12_03_2026_18_07_50",
-      "cat": "oms-order",
-      "desc": "**Date:** 12-03-2026 18:07",
-      "file": "oms-order-discuss/deduct-stock-substitute-12_03_2026_18_07_50.md",
-      "preview": "# Discussion: Deduct Stock in Substitution Workflow\n\n**Date:** 12-03-2026 18:07\n**Context:** Feature `61533-deduct-stock-subsitute` เพิ่ม step การ deduct stock จาก Inventory Service เมื่อทำ substitution สำเร็จ\n**Participants:** Developer + AI Reviewer\n**Status:** Agreed\n\n---\n\n## Background\n\nเมื่อเกิดการ substitute สินค้า (เช่น สินค้า A หมด → เปลี่ยนเป็นสินค้า B) ระบบเดิมทำแค่ update order line + fulfillment detail + quantity detail + publish event แต่ไม่ได้ **หักสต็อก** ของสินค้าใหม่ (substitute",
       "status": "planned"
     },
     {
@@ -114,6 +105,15 @@
       "desc": "**Date:** 09-03-2026 07:42",
       "file": "oms-order-discuss/frontend-impact-potential-issues-api-change-09_03_2026_07_42_05.md",
       "preview": "# Discussion: potentialIssues API Breaking Change — Frontend Impact\n\n**Date:** 09-03-2026 07:42\n**Context:** Backend เปลี่ยน `potentialIssues` จาก `string[]` เป็น `PotentialIssueDto[]` — ต้องแจ้ง frontend ให้ update\n**Participants:** Developer + AI Reviewer\n**Status:** Agreed\n\n---\n\n## Background\n\nระหว่าง implement chore เพิ่ม Detection Rules ใน Tier2 `potentialIssues` (spec: `specs/chore-09_03_2026_06_23_33-api-tier2-potential-issues-enhancement.md`) ได้ปรับ response type ของ `GET /support/tier2",
+      "status": "planned"
+    },
+    {
+      "id": "oms-order-discuss-ghost-error-enrichment-commit-summary-13_03_2026_18_53_02",
+      "label": "ghost-error-enrichment-commit-summary-13_03_2026_18_53_02",
+      "cat": "oms-order",
+      "desc": "**Date:** 13-03-2026 18:53",
+      "file": "oms-order-discuss/ghost-error-enrichment-commit-summary-13_03_2026_18_53_02.md",
+      "preview": "# Discussion: Ghost Error Enrichment — Commit Summary (c33d1bc)\n\n**Date:** 13-03-2026 18:53\n**Context:** วิเคราะห์ 427 ghost error records จาก production แล้ว implement 10 improvements ใน commit เดียว\n**Participants:** Developer + AI Reviewer\n**Status:** Agreed — committed, pending push + migration run\n\n---\n\n## Background\n\nทีมพบว่า junior dev ใช้เวลา debug ghost errors ใน `log_workflow_ev_ghost` นานเกินไป เพราะ error messages ไม่มี context เพียงพอ และไม่สามารถแยก upstream issues (marketplace ส่ง",
       "status": "planned"
     },
     {
@@ -900,6 +900,51 @@
       "desc": "adw_id: `Partial`",
       "file": "oms-order-specs/chore-11_03_2026_16_13_27-Partial-short-weight-qty-discount-recalc.md",
       "preview": "# Chore: แก้ Short/3600 Weight Item — QD Quantity Update + Discount Prorate Recalculation\n\n## Metadata\nadw_id: `Partial`\nprompt: `Partial short no update status and check support request orderline weight quantity 2000 but short orderline weigth 500 quanity 2000-500 = 1500 to update quanityDeatail and discount or discount prorate and adjust weigth 3600 request orderline weight quantity 2000 but fulfillment-event 3600 orderline weigth 500 quanity 2000-500 = 1500 to update quanityDeatail and check ",
+      "status": "in-progress"
+    },
+    {
+      "id": "oms-order-specs-chore-12_03_2026_23_50_35-substitute-deduct-weight-decimal",
+      "label": "chore-12_03_2026_23_50_35-substitute-deduct-weight-decimal",
+      "cat": "oms-order",
+      "desc": "adw_id: `substitute-deduct-weight-decimal`",
+      "file": "oms-order-specs/chore-12_03_2026_23_50_35-substitute-deduct-weight-decimal.md",
+      "preview": "# Chore: Fix Substitute Deduct Stock — Weight Item Double Conversion + Decimal Quantity\n\n## Metadata\nadw_id: `substitute-deduct-weight-decimal`\nprompt: `Deduct stock กรณี weight ติด 400 เพราะ quantity เป็น decimal (97.46) — Inventory Service รับ decimal ไม่ได้`\ndatetime: `12-03-2026 23:50:35`\n\n---\n\n## Chore Description\nเมื่อทำ substitution สินค้า weight item, `buildDeductStockWithSubstituteEvent` คูณ `quantity * 1000` แบบ blind โดยไม่เช็ค UOM → ถ้า substitute request ส่ง quantity เป็น gram อยู่แ",
+      "status": "in-progress"
+    },
+    {
+      "id": "oms-order-specs-chore-13_03_2026_15_02_36-stuck-orders-snapshot-prefilter-bypass",
+      "label": "chore-13_03_2026_15_02_36-stuck-orders-snapshot-prefilter-bypass",
+      "cat": "oms-order",
+      "desc": "adw_id: `stuck-orders-snapshot-prefilter-bypass`",
+      "file": "oms-order-specs/chore-13_03_2026_15_02_36-stuck-orders-snapshot-prefilter-bypass.md",
+      "preview": "# Chore: Fix stuck-orders API ไม่แสดง order เมื่อค้นหาด้วย orderId + date range\n\n## Metadata\nadw_id: `stuck-orders-snapshot-prefilter-bypass`\nprompt: `fix order missing from stuck-orders/list API when searching by orderId with date range — snapshot pre-filter LIMIT 100 silently truncates results`\ndatetime: `13-03-2026 15:02:36`\n\n---\n\n## Chore Description\n\nAPI `support/stuck-orders/list` ไม่แสดง order `PD24-TCA539260311013091` แม้ว่าจะมีข้อมูลครบทั้งใน `log_workflow_events` และ `log_order_snapsho",
+      "status": "in-progress"
+    },
+    {
+      "id": "oms-order-specs-chore-13_03_2026_16_08_43-ghost-log-analysis-debug-improvement",
+      "label": "chore-13_03_2026_16_08_43-ghost-log-analysis-debug-improvement",
+      "cat": "oms-order",
+      "desc": "adw_id: `ghost-log-analysis`",
+      "file": "oms-order-specs/chore-13_03_2026_16_08_43-ghost-log-analysis-debug-improvement.md",
+      "preview": "# Chore: Ghost Order Log Analysis — Debug Improvement Recommendations for Junior Devs\n\n## Metadata\nadw_id: `ghost-log-analysis`\nprompt: `investigate ghost order logs — identify hard-to-debug errors and recommend logging improvements`\ndatetime: `13-03-2026 16:08:43`\n\n---\n\n## Chore Description\n\nวิเคราะห์ 427 ghost error records จาก `log_workflow_ev_ghost` table (marketplace: GrabMart/CFR, ช่วง 2026-03-02 ถึง 2026-03-13) เพื่อระบุ error patterns ที่ junior dev ต้องใช้เวลา debug นาน และแนะนำจุดที่คว",
+      "status": "in-progress"
+    },
+    {
+      "id": "oms-order-specs-chore-13_03_2026_16_39_56-ghost-validation-function-reference",
+      "label": "chore-13_03_2026_16_39_56-ghost-validation-function-reference",
+      "cat": "oms-order",
+      "desc": "adw_id: `ghost`",
+      "file": "oms-order-specs/chore-13_03_2026_16_39_56-ghost-validation-function-reference.md",
+      "preview": "# Chore: Ghost Order — Validation & Function Reference with Error Examples\n\n## Metadata\nadw_id: `ghost`\nprompt: `update validation GhostValidationResult | GhostSchemaSpecResult or relate all function and example msg error for investigate`\ndatetime: `13-03-2026 16:39:56`\n\n---\n\n## Chore Description\n\nรวบรวม reference ครบถ้วนของ Ghost Order Logging System — ทุก function, ทุก type, ทุก error pattern จาก 427 ghost records (GrabMart/CFR, 2026-03-02 → 2026-03-13) เพื่อเป็น investigation guide สำหรับ dev",
+      "status": "in-progress"
+    },
+    {
+      "id": "oms-order-specs-chore-13_03_2026_18_50_01-api-ghost-not-found-message-enrichment",
+      "label": "chore-13_03_2026_18_50_01-api-ghost-not-found-message-enrichment",
+      "cat": "oms-order",
+      "desc": "adw_id: `api`",
+      "file": "oms-order-specs/chore-13_03_2026_18_50_01-api-ghost-not-found-message-enrichment.md",
+      "preview": "# Chore: Ghost API Not Found — เพิ่ม message ช่วย debug (data not found / log location)\n\n## Metadata\nadw_id: `api`\nprompt: `get order ghost not found append msg 'data not found or log location`\ndatetime: `13-03-2026 18:50:01`\n\n---\n\n## Chore Description\nเมื่อ API ghost ค้นหาข้อมูลไม่เจอ (not found / empty results) จะ return แค่ message สั้นๆ เช่น `\"Ghost not found\"` ทำให้ junior dev หรือ support team ไม่รู้ว่าข้อมูลอาจถูก purge ไปแล้ว หรือควรไปดูที่ไหนต่อ\n\nChore นี้จะเพิ่ม contextual message ใน r",
       "status": "in-progress"
     },
     {
@@ -5481,6 +5526,10 @@
       "direction": "forward"
     },
     {
+      "source": "oms-order-discuss-ghost-error-enrichment-commit-summary-13_03_2026_18_53_02",
+      "target": "oms-order-docs-GHOST_LOGGING"
+    },
+    {
       "source": "oms-order-discuss-ghost-logging-full-api-coverage-06_03_2026_01_15_27",
       "target": "oms-order-docs-GHOST_LOGGING"
     },
@@ -5807,6 +5856,22 @@
     {
       "source": "oms-order-specs-chore-09_03_2026_06_23_33-api-tier2-potential-issues-enhancement",
       "target": "oms-order-docs-WORKFLOW_EVENTS"
+    },
+    {
+      "source": "oms-order-specs-chore-13_03_2026_16_08_43-ghost-log-analysis-debug-improvement",
+      "target": "oms-order-docs-GHOST_LOGGING"
+    },
+    {
+      "source": "oms-order-specs-chore-13_03_2026_16_08_43-ghost-log-analysis-debug-improvement",
+      "target": "oms-order-docs-ERROR_CODES_REFERENCE"
+    },
+    {
+      "source": "oms-order-specs-chore-13_03_2026_16_39_56-ghost-validation-function-reference",
+      "target": "oms-order-docs-GHOST_LOGGING"
+    },
+    {
+      "source": "oms-order-specs-chore-13_03_2026_16_39_56-ghost-validation-function-reference",
+      "target": "oms-order-docs-ERROR_CODES_REFERENCE"
     },
     {
       "source": "oms-order-specs-old-chore-01_03_2026_08_49_12-weight-item-documentation",

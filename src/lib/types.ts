@@ -71,7 +71,7 @@ export interface WASDState {
   _wasMoving: boolean;
 }
 
-export type ViewMode = 'globe' | 'kanban';
+export type ViewMode = 'globe' | 'kanban' | 'analytics';
 
 export type KanbanStatus =
   | 'create'
@@ -84,7 +84,9 @@ export type KanbanStatus =
   | 'testing'
   | 'validate'
   | 'update-docs'
-  | 'done';
+  | 'done'
+  | 'archive'
+  | 'delete';
 
 // ── Agent Types (13 agents — maps to SDLC pipeline commands) ─────────────────
 export type AgentType =
@@ -135,6 +137,7 @@ export interface CardPriority {
 // ── Card Lifecycle ───────────────────────────────────────────────────────────
 export type CardLifecycleState =
   | 'idle'       // สร้างแล้ว ยังไม่เริ่ม
+  | 'claimed'    // auto-claimed agent assigned รอ user launch
   | 'started'    // กด Start แล้ว กำลังเตรียม
   | 'running'    // Claude กำลังทำงาน
   | 'paused'     // หยุดชั่วคราว
@@ -175,12 +178,17 @@ export interface KanbanCard {
   // Dependencies
   blockedBy?: string[];   // IDs of cards that must complete before this one
   blocking?: string[];    // IDs of cards that this card is blocking
+  // References (cross-project links)
+  refs?: CardRef[];
 }
 
 export interface KanbanColumnDef {
   id: KanbanStatus;
   label: string;
   color: string;
+  icon?: string;
+  tooltip?: string;
+  claimable?: boolean;
 }
 
 // ── Workflow Types ───────────────────────────────────────────────────────────
@@ -268,9 +276,11 @@ export type KanbanEventType =
   // Card events
   | 'card:created'
   | 'card:moved'
+  | 'card:artifact'
   | 'card:updated'
   | 'card:deleted'
   // Lifecycle events
+  | 'lifecycle:claimed'
   | 'lifecycle:started'
   | 'lifecycle:running'
   | 'lifecycle:paused'
@@ -306,6 +316,62 @@ export interface KanbanEvent<T = unknown> {
   source: KanbanEventSource;
   cardId?: string;
   data: T;
+}
+
+// ── Agent Queue & Pipeline Types ─────────────────────────────────────────────
+
+export interface AgentQueueItem {
+  cardId: string;
+  command: string;
+  args: string;
+  priority: number;
+  enqueuedAt: number;
+  retryCount: number;
+}
+
+export interface AgentHealthSnapshot {
+  runningCount: number;
+  queueDepth: number;
+  maxConcurrent: number;
+  totalLaunched: number;
+  totalCompleted: number;
+  totalFailed: number;
+  avgDurationMs: number;
+  isAtCapacity: boolean;
+}
+
+export interface PipelineAdvanceRule {
+  fromColumn: KanbanStatus;
+  toColumn: KanbanStatus;
+  autoAgent: AgentType | null;
+  autoLaunch: boolean;
+}
+
+// ── Card References ──────────────────────────────────────────────────────────
+export type CardRefType = 'relates-to' | 'duplicates' | 'parent-of' | 'child-of';
+
+export interface CardRef {
+  targetId: string;
+  type: CardRefType;
+  createdAt: number;
+  note?: string;
+}
+
+// ── Checklist ────────────────────────────────────────────────────────────────
+export interface ChecklistItem {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt: number;
+}
+
+// ── Card Comments ────────────────────────────────────────────────────────────
+export interface CardComment {
+  id: string;
+  text: string;
+  author: string;  // 'user' | 'agent:chore' | 'system'
+  createdAt: number;
+  editedAt?: number;
 }
 
 // ── Command Registry Types ───────────────────────────────────────────────────

@@ -1,19 +1,19 @@
 import type { IterationRecord, IterationScore } from '../types';
 import { updateIteration } from '../stores/kanbanState';
+import { kanbanDB } from '../stores/kanbanDB';
 
-// ── Iteration Tracking ──────────────────────────────────────────────────────
-
-const HISTORY_KEY = 'kg-kanban-iteration-history';
+// ── Iteration Tracking (via kanbanDB) ────────────────────────────────────────
 
 function loadHistory(): Record<string, IterationRecord[]> {
-  try {
-    return JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}');
-  } catch { return {}; }
+  return kanbanDB.iterHistory.get({} as Record<string, unknown[]>) as Record<string, IterationRecord[]>;
 }
 
 function saveHistory(h: Record<string, IterationRecord[]>): void {
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
+  kanbanDB.iterHistory.set(h as unknown as Record<string, unknown[]>);
 }
+
+// Migrate old key
+try { localStorage.removeItem('kg-kanban-iteration-history'); } catch { /* ignore */ }
 
 /** Get iteration history for a card */
 export function getIterationHistory(cardId: string): IterationRecord[] {

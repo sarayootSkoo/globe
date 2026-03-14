@@ -1,22 +1,16 @@
 import { writable, derived } from 'svelte/store';
+import { kanbanDB } from './kanbanDB';
 import type { WorkflowExecution, WorkflowStepRecord, KanbanStatus } from '../types';
 import { WORKFLOW_CHAINS } from '../workflow/workflowEngine';
 
-// ── Persistence ─────────────────────────────────────────────────────────────
-const WORKFLOW_KEY = 'kg-kanban-workflows';
-
-function loadWorkflows(): Record<string, WorkflowExecution> {
-  try {
-    return JSON.parse(localStorage.getItem(WORKFLOW_KEY) || '{}');
-  } catch { return {}; }
-}
-
-// ── Store ───────────────────────────────────────────────────────────────────
+// ── Store (via kanbanDB) ────────────────────────────────────────────────────
 
 /** Active workflow executions — keyed by cardId */
-export const workflowExecutions = writable<Record<string, WorkflowExecution>>(loadWorkflows());
+export const workflowExecutions = writable<Record<string, WorkflowExecution>>(
+  kanbanDB.workflows.get({} as Record<string, unknown>) as Record<string, WorkflowExecution>
+);
 workflowExecutions.subscribe(v => {
-  localStorage.setItem(WORKFLOW_KEY, JSON.stringify(v));
+  kanbanDB.workflows.set(v as unknown as Record<string, unknown>);
 });
 
 // ── Derived ─────────────────────────────────────────────────────────────────

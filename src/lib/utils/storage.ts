@@ -19,21 +19,24 @@ configure({
 export function safeGet<T>(key: string, fallback: T): T {
   try {
     if (typeof window === 'undefined') return fallback;
-    // Pre-check: if raw localStorage value isn't a string, the secure
-    // storage library will throw "Value must be string" during decrypt.
-    // Clear the corrupted entry and return fallback instead.
     const raw = window.localStorage.getItem(`kg_${key}`);
-    if (raw !== null && typeof raw !== 'string') {
+    if (raw === null) return fallback;
+    // If raw value is not a properly encrypted string, clear and fallback
+    if (typeof raw !== 'string' || raw.length === 0) {
       window.localStorage.removeItem(`kg_${key}`);
       return fallback;
     }
+    // Try plain JSON first (for values written by kanbanDB or non-encrypted)
+    try {
+      const plain = JSON.parse(raw);
+      if (typeof plain === typeof fallback) return plain as T;
+    } catch { /* not plain JSON, try decrypt */ }
     const val = secureStorage.getItem<T>(key);
     if (val === null || val === undefined) return fallback;
-    // Type guard: ensure value matches fallback's type
     if (typeof val !== typeof fallback) return fallback;
     return val;
   } catch {
-    // Corrupted or incompatible data — remove and return fallback
+    // Corrupted or incompatible data — silently remove and return fallback
     try { window.localStorage.removeItem(`kg_${key}`); } catch { /* ignore */ }
     return fallback;
   }

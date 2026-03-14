@@ -8,10 +8,12 @@
   import { WORKFLOW_CHAINS } from '../../lib/workflow/workflowEngine';
   import WorkflowHistory from './WorkflowHistory.svelte';
   import FileDropZone from './FileDropZone.svelte';
+  import JsonTreeView from './JsonTreeView.svelte';
   import { activityLog, getCardLogs, addLog, type LogEntry } from '../../lib/stores/activityLog';
   import { recentEvents, agentLiveStatuses, wsConnected, agentConsoleOutput } from '../../lib/stores/agentEventStore';
   import type { ConsoleLine } from '../../lib/stores/agentEventStore';
   import type { KanbanEvent, AgentLiveStatus } from '../../lib/types';
+  import { unclaimCard, excludeFromAutoClaim } from '../../lib/stores/autoClaimEngine';
 
   const EVENT_SERVER = 'http://localhost:4010';
 
@@ -92,6 +94,20 @@
   function renderMd(text: string): string {
     if (!text) return '<p class="empty">No content preview available</p>';
     return marked.parse(text) as string;
+  }
+
+  // Try to extract JSON from description (raw or wrapped in ```json code block)
+  function tryParseJson(text: string | undefined): unknown | null {
+    if (!text) return null;
+    // Strip ```json ... ``` wrapper
+    let raw = text.trim();
+    const fenceMatch = raw.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+    if (fenceMatch) raw = fenceMatch[1].trim();
+    // Try parse
+    if ((raw.startsWith('{') || raw.startsWith('[')) && raw.length > 2) {
+      try { return JSON.parse(raw); } catch { return null; }
+    }
+    return null;
   }
 
   // ── Load full file content from event server ─────────────────────────────
@@ -720,7 +736,16 @@
             {/if}
 
             {#if card.node.desc}
-              <div class="card-desc">{card.node.desc}</div>
+              {@const jsonData = tryParseJson(card.node.desc)}
+              {#if jsonData !== null}
+                <div class="card-desc card-json-tree">
+                  <JsonTreeView data={jsonData} />
+                </div>
+              {:else}
+                <div class="card-desc markdown-body">
+                  {@html renderMd(card.node.desc)}
+                </div>
+              {/if}
             {/if}
 
             {#if fileError}
@@ -764,6 +789,12 @@
             <div class="lifecycle-badge lifecycle-{card.lifecycle}">
               {card.lifecycle.toUpperCase()}
             </div>
+            {#if card.lifecycle === 'claimed'}
+              <div class="claimed-actions">
+                <button class="claimed-btn unclaim-btn" onclick={() => unclaimCard(card.node.id)}>Unclaim</button>
+                <button class="claimed-btn exclude-btn" onclick={() => excludeFromAutoClaim(card.node.id)}>Exclude</button>
+              </div>
+            {/if}
             {#if card.pauseReason}
               <div class="pause-reason">{card.pauseReason.replace('_', ' ')}</div>
             {/if}
@@ -847,7 +878,7 @@
               <div class="detail-row"><span class="detail-key">Section:</span> <span class="detail-val">{card.node.cat}</span></div>
             {/if}
             {#if card.node.desc}
-              <div class="detail-row"><span class="detail-key">Desc:</span> <span class="detail-val detail-desc">{card.node.desc}</span></div>
+              <div class="detail-row"><span class="detail-key">Desc:</span> <span class="detail-val detail-desc">{card.node.desc.startsWith('```') ? '(JSON data)' : card.node.desc.slice(0, 80)}{card.node.desc.length > 80 && !card.node.desc.startsWith('```') ? '...' : ''}</span></div>
             {/if}
           </div>
 
@@ -1115,9 +1146,39 @@
   .file-path { font-size: 11px; color: #888; word-break: break-all; }
   .no-content { color: #555; font-size: 12px; font-style: italic; padding: 20px 0; }
   .card-desc {
-    margin-top: 12px; font-size: 11px; color: #888;
+    margin-top: 12px; font-size: 12px; color: #999;
     padding: 10px; background: rgba(255,255,255,0.02);
     border-radius: 6px; line-height: 1.5;
+  }
+  .card-desc :global(pre) {
+    background: #0d1117;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 6px;
+    padding: 12px;
+    overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .card-desc :global(code) {
+    color: #e0e0e0;
+    font-family: var(--font, 'JetBrains Mono', monospace);
+  }
+  .card-desc :global(p) {
+    margin: 0 0 8px;
+  }
+  .card-desc :global(p:last-child) {
+    margin-bottom: 0;
+  }
+  .card-json-tree {
+    background: #0d1117;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    padding: 12px;
+    overflow-x: auto;
+    max-height: 500px;
+    overflow-y: auto;
   }
 
   .loading-msg { color: #555; font-size: 12px; padding: 20px; text-align: center; }
@@ -1150,6 +1211,7 @@
     font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
   }
   .lifecycle-idle { background: rgba(255,255,255,0.05); color: #888; }
+  .lifecycle-claimed { background: rgba(180,77,255,0.12); color: #b44dff; }
   .lifecycle-started { background: rgba(0,229,255,0.1); color: #00e5ff; }
   .lifecycle-running { background: rgba(0,255,136,0.1); color: #00ff88; }
   .lifecycle-paused { background: rgba(249,115,22,0.1); color: #f97316; }
@@ -1157,6 +1219,15 @@
   .lifecycle-failed { background: rgba(255,85,85,0.1); color: #ff5555; }
   .lifecycle-blocked { background: rgba(255,204,0,0.1); color: #ffcc00; }
   .pause-reason { font-size: 10px; color: #f97316; margin-top: 4px; }
+  .claimed-actions { display: flex; gap: 6px; margin-top: 6px; }
+  .claimed-btn {
+    font-size: 10px; font-family: inherit; padding: 3px 8px;
+    border-radius: 4px; cursor: pointer; border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04); color: #aaa; transition: all 0.15s;
+  }
+  .claimed-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .unclaim-btn:hover { border-color: rgba(249,115,22,0.4); color: #f97316; }
+  .exclude-btn:hover { border-color: rgba(255,85,85,0.4); color: #ff5555; }
 
   /* Re-run buttons */
   .command-list { display: flex; flex-direction: column; gap: 4px; }

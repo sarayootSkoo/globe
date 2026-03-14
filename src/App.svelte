@@ -3,7 +3,9 @@
   import { loadData } from './lib/stores/graphData';
   import { loadConfig, graphConfig } from './lib/config';
   import { setCategories } from './lib/constants';
-  import { theme, immersiveMode, viewMode } from './lib/stores/appState';
+  import { theme, immersiveMode, viewMode, globePreview } from './lib/stores/appState';
+  import { kanbanDB } from './lib/stores/kanbanDB';
+  import { initAllStores } from './lib/stores/initStores';
 
   // Background
   import Scanline from './components/background/Scanline.svelte';
@@ -45,6 +47,7 @@
   // Kanban
   import KanbanBoard from './components/kanban/KanbanBoard.svelte';
   import IPCStatus from './components/kanban/IPCStatus.svelte';
+  import AnalyticsDashboard from './components/kanban/AnalyticsDashboard.svelte';
 
   // Keyboard help
   import KeyboardHelp from './components/controls/KeyboardHelp.svelte';
@@ -61,9 +64,15 @@
   let wasdKeys = $state({ w: false, a: false, s: false, d: false, q: false, shift: false });
   let wasdSpeed = $state(0);
   let currentView = $state<ViewMode>('globe');
+  let isGlobePreview = $state(false);
 
   $effect(() => {
     const unsub = viewMode.subscribe(v => { currentView = v; });
+    return unsub;
+  });
+
+  $effect(() => {
+    const unsub = globePreview.subscribe(v => { isGlobePreview = v; });
     return unsub;
   });
 
@@ -84,6 +93,10 @@
   });
 
   onMount(async () => {
+    // Load kanban state from SQLite BEFORE rendering
+    await kanbanDB.init();
+    initAllStores();
+
     const config = await loadConfig();
     setCategories(config.categories);
     await loadData(config);
@@ -112,8 +125,8 @@
   }
 </script>
 
-<!-- Background layers (disabled on board to save battery) -->
-{#if currentView !== 'kanban'}
+<!-- Background layers (disabled on board/analytics to save battery) -->
+{#if currentView === 'globe'}
   <Scanline />
   <ParticleCanvas />
   <BorderMagic />
@@ -121,17 +134,24 @@
 <Corners />
 
 {#if loaded}
-  <!-- Menu Panel — always visible, controls both views -->
+  <!-- Menu Panel — always visible, controls all views -->
   <MenuPanel oncrossrepopanel={handleCrossRepoPanel} />
 
   {#if currentView === 'kanban'}
+    <!-- Globe Preview: render real GlobeCanvas offscreen for frame capture -->
+    {#if isGlobePreview}
+      <div class="globe-offscreen-render">
+        <GlobeCanvas onwasdupdate={handleWasdUpdate} />
+      </div>
+    {/if}
     <!-- HTML Kanban Board -->
     <KanbanBoard />
-    <!-- Detail panel for card clicks -->
     <DetailPanel />
     <PreviewOverlay />
-    <!-- IPC connection status indicator (bottom-right, fixed) -->
     <IPCStatus />
+  {:else if currentView === 'analytics'}
+    <!-- Analytics Dashboard (full page) -->
+    <AnalyticsDashboard />
   {:else}
     <!-- 3D Globe -->
     <GlobeCanvas onwasdupdate={handleWasdUpdate} />
@@ -170,3 +190,16 @@
 
 <KeyboardHelp />
 <KeyboardShortcuts />
+
+<style>
+  /* Globe renders at full resolution but is visually hidden behind kanban.
+     It must NOT be display:none (Three.js won't render) so we use
+     clip + opacity 0 to keep it off-screen but rendering. */
+  .globe-offscreen-render {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    opacity: 0;
+    pointer-events: none;
+  }
+</style>

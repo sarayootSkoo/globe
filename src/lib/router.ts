@@ -12,11 +12,13 @@ import type { ViewMode } from './stores/appState';
 const ROUTES: Record<string, ViewMode> = {
   '/': 'globe',
   '/board': 'kanban',
+  '/analytics': 'analytics',
 };
 
 const VIEW_TO_PATH: Record<ViewMode, string> = {
   globe: '/',
   kanban: '/board',
+  analytics: '/analytics',
 };
 
 function pathToView(pathname: string): ViewMode {

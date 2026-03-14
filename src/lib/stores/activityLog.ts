@@ -14,6 +14,7 @@ import { kanbanDB } from './kanbanDB';
 
 export type LogAction =
   | 'lifecycle:idle'
+  | 'lifecycle:claimed'
   | 'lifecycle:started'
   | 'lifecycle:running'
   | 'lifecycle:paused'

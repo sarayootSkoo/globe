@@ -163,7 +163,7 @@ export class GlobeRenderer {
     const H = window.innerHeight;
 
     // ── Renderer ──────────────────────────────────────────────────────────────
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
     this.renderer.setSize(W, H);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x000000, 0); // transparent — body bg shows through

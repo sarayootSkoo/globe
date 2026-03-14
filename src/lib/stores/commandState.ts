@@ -1,4 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
+import { kanbanDB } from './kanbanDB';
 import type { KanbanStatus } from '../types';
 
 // ── Command Queue Types ─────────────────────────────────────────────────────
@@ -13,31 +14,22 @@ export interface QueuedCommand {
   completedAt?: number;
 }
 
-// ── Persistence ─────────────────────────────────────────────────────────────
-
-const QUEUE_KEY = 'kg-kanban-command-queue';
-const PANEL_KEY = 'kg-kanban-command-panel';
-
-function loadQueue(): QueuedCommand[] {
-  try {
-    return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
-  } catch { return []; }
-}
-
-// ── Stores ──────────────────────────────────────────────────────────────────
+// ── Stores (via kanbanDB) ───────────────────────────────────────────────────
 
 /** Command queue — Sprint 1: just tracks clipboard copies */
-export const commandQueue = writable<QueuedCommand[]>(loadQueue());
+export const commandQueue = writable<QueuedCommand[]>(
+  kanbanDB.commands.get([] as unknown[]) as QueuedCommand[]
+);
 commandQueue.subscribe(v => {
-  localStorage.setItem(QUEUE_KEY, JSON.stringify(v));
+  kanbanDB.commands.set(v as unknown[]);
 });
 
 /** Whether command panel sidebar is open */
 export const commandPanelOpen = writable<boolean>(
-  localStorage.getItem(PANEL_KEY) === 'true'
+  kanbanDB.commandPanel.get(false)
 );
 commandPanelOpen.subscribe(v => {
-  localStorage.setItem(PANEL_KEY, String(v));
+  kanbanDB.commandPanel.set(v);
 });
 
 /** Active (non-completed) commands */

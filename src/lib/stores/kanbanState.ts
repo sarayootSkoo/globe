@@ -5,55 +5,22 @@ import { addLog } from './activityLog';
 import type {
   GraphNode, KanbanCard, KanbanStatus, KanbanColumnDef,
   AgentType, CardType, CardLifecycleState, PauseReason,
-  AgentSuggestion, CardPriority,
+  AgentSuggestion, CardPriority, CardRef, ChecklistItem, CardComment,
 } from '../types';
 
-// ── SDLC Pipeline Columns ────────────────────────────────────────────────────
-export const KANBAN_COLUMNS: KanbanColumnDef[] = [
-  { id: 'create',      label: 'CREATE',      color: '#ffffff' },
-  { id: 'design',      label: 'DESIGN',      color: '#b44dff' },
-  { id: 'backlog',     label: 'BACKLOG',     color: '#888888' },
-  { id: 'hold',        label: 'HOLD',        color: '#ffcc00' },
-  { id: 'task',        label: 'TASK',        color: '#00e5ff' },
-  { id: 'issue',       label: 'ISSUE',       color: '#ff3d3d' },
-  { id: 'develop',     label: 'DEVELOP',     color: '#4d8aff' },
-  { id: 'testing',     label: 'TESTING',     color: '#f97316' },
-  { id: 'validate',    label: 'VALIDATE',    color: '#00ff88' },
-  { id: 'update-docs', label: 'UPDATE DOCS', color: '#ff3dff' },
-  { id: 'done',        label: 'DONE',        color: '#666666' },
-];
+// ── Config-driven definitions (editable via Settings dialog) ─────────────────
+import { kanbanConfig } from './kanbanConfig';
 
-// ── Agent Definitions (13 agents — full SDLC team) ──────────────────────────
-export const AGENT_DEFS: Record<string, { label: string; role: string; color: string; icon: string; command: string }> = {
-  chore:      { label: 'Chore',      role: 'Tech Lead',        color: '#b44dff', icon: 'CH', command: '/chore' },
-  feature:    { label: 'Feature',    role: 'Tech Lead',        color: '#a855f7', icon: 'FE', command: '/feature' },
-  breakdown:  { label: 'Breakdown',  role: 'Product Manager',  color: '#ff3dff', icon: 'BD', command: '/breakdown' },
-  estimate:   { label: 'Estimate',   role: 'Scrum Master',     color: '#06b6d4', icon: 'ES', command: '/estimate' },
-  implement:  { label: 'Implement',  role: 'Developer',        color: '#4d8aff', icon: 'IM', command: '/implement' },
-  issue:      { label: 'Issue',      role: 'Investigator',     color: '#ff3d3d', icon: 'IS', command: '/issue' },
-  test:       { label: 'Test',       role: 'QA Engineer',      color: '#eab308', icon: 'TE', command: '/test' },
-  review:     { label: 'Review',     role: 'Code Reviewer',    color: '#f97316', icon: 'RE', command: '/review' },
-  security:   { label: 'Security',   role: 'Security Auditor', color: '#ef4444', icon: 'SE', command: '/security' },
-  validate:   { label: 'Validate',   role: 'Domain Expert',    color: '#00ff88', icon: 'VA', command: '/validate' },
-  docs:       { label: 'Docs',       role: 'Tech Writer',      color: '#8b5cf6', icon: 'DO', command: '/docs' },
-  deploy:     { label: 'Deploy',     role: 'DevOps Engineer',  color: '#64748b', icon: 'DP', command: '/deploy' },
-  discussion: { label: 'Discussion', role: 'Architect',        color: '#14b8a6', icon: 'DI', command: '/discussion' },
-};
+// Mutable snapshot — updated lazily when config changes (not reactive stores)
+export let KANBAN_COLUMNS: KanbanColumnDef[] = get(kanbanConfig).columns;
+export let AGENT_DEFS: Record<string, { label: string; role: string; color: string; icon: string; command: string }> = get(kanbanConfig).agents;
+export let AGENT_SUGGEST_RULES: Record<KanbanStatus, AgentType[]> = get(kanbanConfig).agentSuggestRules as Record<KanbanStatus, AgentType[]>;
 
-// ── Agent Suggestion Rules (which agents are valid per column) ───────────────
-export const AGENT_SUGGEST_RULES: Record<KanbanStatus, AgentType[]> = {
-  'create':      ['chore', 'feature', 'issue'],
-  'design':      ['breakdown', 'discussion', 'chore'],
-  'backlog':     [],
-  'hold':        [],
-  'task':        ['implement', 'estimate'],
-  'issue':       ['issue'],
-  'develop':     ['implement'],
-  'testing':     ['test', 'review'],
-  'validate':    ['validate', 'security'],
-  'update-docs': ['docs'],
-  'done':        ['deploy'],
-};
+kanbanConfig.subscribe(cfg => {
+  KANBAN_COLUMNS = cfg.columns;
+  AGENT_DEFS = cfg.agents;
+  AGENT_SUGGEST_RULES = cfg.agentSuggestRules as Record<KanbanStatus, AgentType[]>;
+});
 
 // ── Persistence (kanbanDB) ────────────────────────────────────────────────────
 
@@ -78,6 +45,33 @@ export const cardUpdatedAt = writable<Record<string, number>>(
   kanbanDB.get('cardUpdatedAt', {}) as Record<string, number>
 );
 cardUpdatedAt.subscribe(v => { kanbanDB.set('cardUpdatedAt', v); });
+
+/** Manual card ordering per column — column → ordered nodeId[] */
+export const cardOrder = writable<Record<string, string[]>>(
+  kanbanDB.get('cardOrder', {}) as Record<string, string[]>
+);
+cardOrder.subscribe(v => { kanbanDB.set('cardOrder', v); });
+
+export function setCardOrder(colId: string, order: string[]): void {
+  cardOrder.update(m => ({ ...m, [colId]: order }));
+}
+
+export function clearCardOrder(): void {
+  cardOrder.set({});
+  kanbanDB.set('cardOrder', {});
+}
+
+/** Reset all manual overrides — statuses, agents, lifecycle, order, local cards */
+export function resetBoard(): void {
+  statusOverrides.set({});
+  agentAssignments.set({});
+  lifecycleStates.set({});
+  iterationStates.set({});
+  cardUpdatedAt.set({});
+  cardOrder.set({});
+  localCards.set({});
+  cardDependencyMap.set({});
+}
 
 function touchCard(nodeId: string): void {
   cardUpdatedAt.update(m => ({ ...m, [nodeId]: Date.now() }));
@@ -146,6 +140,138 @@ export const cardDependencies = derived(
   }
 );
 
+// ── Card References Store ────────────────────────────────────────────────────
+
+export const cardRefs = writable<Record<string, CardRef[]>>(
+  kanbanDB.get('cardRefs', {}) as Record<string, CardRef[]>
+);
+cardRefs.subscribe(v => { kanbanDB.set('cardRefs', v); });
+
+export function addCardRef(cardId: string, ref: CardRef): void {
+  cardRefs.update(m => {
+    const existing = m[cardId] ?? [];
+    if (existing.some(r => r.targetId === ref.targetId && r.type === ref.type)) return m;
+    return { ...m, [cardId]: [...existing, ref] };
+  });
+  addLog(cardId, 'card:updated', { action: 'ref:added', targetId: ref.targetId, refType: ref.type });
+}
+
+export function removeCardRef(cardId: string, targetId: string): void {
+  cardRefs.update(m => {
+    const existing = m[cardId];
+    if (!existing) return m;
+    const next = existing.filter(r => r.targetId !== targetId);
+    if (next.length === 0) {
+      const copy = { ...m };
+      delete copy[cardId];
+      return copy;
+    }
+    return { ...m, [cardId]: next };
+  });
+  addLog(cardId, 'card:updated', { action: 'ref:removed', targetId });
+}
+
+// ── Card Labels Store ────────────────────────────────────────────────────────
+
+export const cardLabels = writable<Record<string, string[]>>(
+  kanbanDB.get('cardLabels', {}) as Record<string, string[]>
+);
+cardLabels.subscribe(v => { kanbanDB.set('cardLabels', v); });
+
+export function setCardLabels(cardId: string, labelIds: string[]): void {
+  cardLabels.update(m => ({ ...m, [cardId]: labelIds }));
+}
+
+export function toggleCardLabel(cardId: string, labelId: string): void {
+  cardLabels.update(m => {
+    const existing = m[cardId] ?? [];
+    const has = existing.includes(labelId);
+    return { ...m, [cardId]: has ? existing.filter(l => l !== labelId) : [...existing, labelId] };
+  });
+}
+
+// ── Card Due Dates Store ─────────────────────────────────────────────────────
+
+export const cardDueDates = writable<Record<string, string>>(
+  kanbanDB.get('cardDueDates', {}) as Record<string, string>
+);
+cardDueDates.subscribe(v => { kanbanDB.set('cardDueDates', v); });
+
+export function setCardDueDate(cardId: string, dateIso: string | null): void {
+  cardDueDates.update(m => {
+    if (!dateIso) {
+      const copy = { ...m };
+      delete copy[cardId];
+      return copy;
+    }
+    return { ...m, [cardId]: dateIso };
+  });
+}
+
+// ── Card Checklists Store ────────────────────────────────────────────────────
+
+export const cardChecklists = writable<Record<string, ChecklistItem[]>>(
+  kanbanDB.get('cardChecklists', {}) as Record<string, ChecklistItem[]>
+);
+cardChecklists.subscribe(v => { kanbanDB.set('cardChecklists', v); });
+
+export function addChecklistItem(cardId: string, text: string): void {
+  const item: ChecklistItem = {
+    id: `cl-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    text,
+    done: false,
+    createdAt: Date.now(),
+  };
+  cardChecklists.update(m => ({ ...m, [cardId]: [...(m[cardId] ?? []), item] }));
+}
+
+export function toggleChecklistItem(cardId: string, itemId: string): void {
+  cardChecklists.update(m => {
+    const items = m[cardId];
+    if (!items) return m;
+    return { ...m, [cardId]: items.map(i => i.id === itemId ? { ...i, done: !i.done } : i) };
+  });
+}
+
+export function removeChecklistItem(cardId: string, itemId: string): void {
+  cardChecklists.update(m => {
+    const items = m[cardId];
+    if (!items) return m;
+    return { ...m, [cardId]: items.filter(i => i.id !== itemId) };
+  });
+}
+
+// ── Card Comments Store ──────────────────────────────────────────────────────
+
+export const cardComments = writable<Record<string, CardComment[]>>(
+  kanbanDB.get('cardComments', {}) as Record<string, CardComment[]>
+);
+cardComments.subscribe(v => { kanbanDB.set('cardComments', v); });
+
+export function addCardComment(cardId: string, text: string, author: string = 'user'): void {
+  const comment: CardComment = {
+    id: `cmt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    text,
+    author,
+    createdAt: Date.now(),
+  };
+  cardComments.update(m => ({ ...m, [cardId]: [...(m[cardId] ?? []), comment] }));
+}
+
+export function removeCardComment(cardId: string, commentId: string): void {
+  cardComments.update(m => {
+    const items = m[cardId];
+    if (!items) return m;
+    return { ...m, [cardId]: items.filter(c => c.id !== commentId) };
+  });
+}
+
+// ── Visible Projects (derived) ───────────────────────────────────────────────
+
+export const visibleProjects = derived(kanbanConfig, ($cfg) => {
+  return new Set(($cfg.projects ?? []).filter(p => p.visible).map(p => p.id));
+});
+
 /** nodeId → lifecycle state */
 export interface LifecycleData {
   state: CardLifecycleState;
@@ -189,6 +315,15 @@ export function assignAgent(nodeId: string, agent: AgentType): void {
   }
 }
 
+export function setCardArtifact(nodeId: string, filePath: string): void {
+  iterationStates.update(m => ({
+    ...m,
+    [nodeId]: { ...m[nodeId] ?? { count: 0, score: 0 }, artifactPath: filePath },
+  }));
+  touchCard(nodeId);
+  addLog(nodeId, 'card:artifact', { filePath });
+}
+
 export function moveCard(nodeId: string, newStatus: KanbanStatus): void {
   const prev = get(statusOverrides)[nodeId] ?? null;
   statusOverrides.update(m => ({ ...m, [nodeId]: newStatus }));
@@ -215,6 +350,18 @@ export function removeLocalCard(cardId: string): void {
     delete next[cardId];
     return next;
   });
+}
+
+/** Fully delete a card — remove from all stores */
+export function deleteCard(cardId: string): void {
+  removeLocalCard(cardId);
+  statusOverrides.update(m => { const n = { ...m }; delete n[cardId]; return n; });
+  lifecycleStates.update(m => { const n = { ...m }; delete n[cardId]; return n; });
+  agentAssignments.update(m => { const n = { ...m }; delete n[cardId]; return n; });
+  iterationStates.update(m => { const n = { ...m }; delete n[cardId]; return n; });
+  cardPriorities.update(m => { const n = new Map(m); n.delete(cardId); return n; });
+  cardUpdatedAt.update(m => { const n = { ...m }; delete n[cardId]; return n; });
+  addLog(cardId, 'card:deleted', {});
 }
 
 export function updateLifecycle(
@@ -366,8 +513,8 @@ function detectType(f: string): CardType {
 // ── Derived Stores ───────────────────────────────────────────────────────────
 
 export const kanbanCards = derived(
-  [graphNodes, agentAssignments, statusOverrides, localCards, lifecycleStates, iterationStates, cardDependencyMap],
-  ([$nodes, $agents, $overrides, $locals, $lifecycle, $iterations, $depMap]) => {
+  [graphNodes, agentAssignments, statusOverrides, localCards, lifecycleStates, iterationStates, cardDependencyMap, cardRefs],
+  ([$nodes, $agents, $overrides, $locals, $lifecycle, $iterations, $depMap, $refs]) => {
     const cards: KanbanCard[] = [];
 
     /** Returns the IDs of cards that `id` is blocking (appears in their blockedBy list). */
@@ -387,6 +534,7 @@ export const kanbanCards = derived(
       const iter = $iterations[node.id];
       const blockedBy = $depMap[node.id] ?? [];
       const blocking = computeBlocking(node.id);
+      const nodeRefs = $refs[node.id] ?? [];
       cards.push({
         node,
         status,
@@ -402,6 +550,7 @@ export const kanbanCards = derived(
         artifactPath: iter?.artifactPath ?? node.file ?? null,
         blockedBy: blockedBy.length > 0 ? blockedBy : undefined,
         blocking: blocking.length > 0 ? blocking : undefined,
+        refs: nodeRefs.length > 0 ? nodeRefs : undefined,
       });
     }
 
@@ -418,6 +567,7 @@ export const kanbanCards = derived(
       };
       const blockedBy = $depMap[local.id] ?? [];
       const blocking = computeBlocking(local.id);
+      const localRefs = $refs[local.id] ?? [];
       cards.push({
         node: fakeNode,
         status: $overrides[local.id] || local.column,
@@ -435,6 +585,7 @@ export const kanbanCards = derived(
         isLocal: true,
         blockedBy: blockedBy.length > 0 ? blockedBy : undefined,
         blocking: blocking.length > 0 ? blocking : undefined,
+        refs: localRefs.length > 0 ? localRefs : undefined,
       });
     }
 
@@ -590,7 +741,7 @@ export function updateLifecycleByStatus(
  * server or a Claude hook wrote new data. Uses "remote wins" merge strategy.
  */
 export function mergeBoardState(board: {
-  cards?: Record<string, unknown>;
+  cards?: Array<Record<string, unknown>>;
   lifecycle?: Record<string, LifecycleData>;
   agents?: Record<string, AgentType>;
   moves?: Record<string, KanbanStatus>;
@@ -608,6 +759,73 @@ export function mergeBoardState(board: {
   }
   if (board.dependencies) {
     cardDependencyMap.update(current => ({ ...current, ...board.dependencies }));
+  }
+
+  // Merge server-created cards into local stores
+  if (Array.isArray(board.cards)) {
+    const currentLocal = get(localCards);
+    const currentGraph = get(graphNodes);
+    const graphIds = new Set(currentGraph.map(n => n.id));
+
+    for (const c of board.cards) {
+      const id = c.id as string;
+      if (!id) continue;
+      // Skip if already in graph nodes or local cards
+      if (graphIds.has(id) || currentLocal[id]) {
+        // But still update column/lifecycle if server has newer data
+        const serverCol = (c.column_id || c.column || c.status) as KanbanStatus;
+        const serverLifecycle = (c.lifecycleState || c.lifecycle) as CardLifecycleState;
+        if (serverCol) {
+          statusOverrides.update(m => ({ ...m, [id]: serverCol }));
+        }
+        if (serverLifecycle) {
+          lifecycleStates.update(m => ({
+            ...m,
+            [id]: { ...m[id], state: serverLifecycle, updatedAt: Date.now() },
+          }));
+        }
+        // Update artifact path if server has it
+        if (c.artifactPath) {
+          iterationStates.update(m => ({
+            ...m,
+            [id]: { ...m[id], artifactPath: c.artifactPath as string },
+          }));
+        }
+        continue;
+      }
+
+      // New card from server — add to localCards
+      const col = (c.column_id || c.column || c.status || 'backlog') as string;
+      addLocalCard({
+        id,
+        title: (c.title || c.label || id) as string,
+        description: '',
+        section: (c.section || c.cat || 'knowledge-graph') as string,
+        type: (c.type || 'spec') as 'spec' | 'discussion' | 'task' | 'issue',
+        column: col as KanbanStatus,
+        createdAt: c.createdAt ? new Date(c.createdAt as string).getTime() : Date.now(),
+      });
+
+      // Set lifecycle
+      const lifecycle = (c.lifecycleState || c.lifecycle || 'idle') as CardLifecycleState;
+      lifecycleStates.update(m => ({
+        ...m,
+        [id]: { state: lifecycle, updatedAt: Date.now() },
+      }));
+
+      // Set agent if present
+      if (c.agent_type) {
+        agentAssignments.update(m => ({ ...m, [id]: c.agent_type as AgentType }));
+      }
+
+      // Set artifact path
+      if (c.artifactPath) {
+        iterationStates.update(m => ({
+          ...m,
+          [id]: { ...m[id], artifactPath: c.artifactPath as string },
+        }));
+      }
+    }
   }
 }
 
@@ -728,4 +946,16 @@ export function stopBoardSync(): void {
     _syncUnsubscribe();
     _syncUnsubscribe = null;
   }
+}
+
+// ── Re-init stores from DB cache (call after kanbanDB.init()) ───────────────
+
+export function initKanbanStores(): void {
+  agentAssignments.set(kanbanDB.get('agents', {}) as Record<string, AgentType>);
+  statusOverrides.set(kanbanDB.get('moves', {}) as Record<string, KanbanStatus>);
+  cardUpdatedAt.set(kanbanDB.get('cardUpdatedAt', {}) as Record<string, number>);
+  localCards.set(kanbanDB.get('cards', {}) as Record<string, LocalCardData>);
+  cardDependencyMap.set(kanbanDB.get('dependencies', {}) as Record<string, string[]>);
+  lifecycleStates.set(kanbanDB.get('lifecycle', {}) as Record<string, LifecycleData>);
+  iterationStates.set(kanbanDB.get('iterations', {}) as Record<string, IterationData>);
 }

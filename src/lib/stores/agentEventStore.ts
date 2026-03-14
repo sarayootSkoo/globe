@@ -1,8 +1,11 @@
-import { writable } from 'svelte/store';
+import { writable, get as storeGet } from 'svelte/store';
 import type { AgentLiveStatus, KanbanEvent } from '../types';
-import { updateLifecycle, moveCard, mergeBoardState } from './kanbanState';
+import { updateLifecycle, moveCard, mergeBoardState, setCardArtifact, iterationStates } from './kanbanState';
 import { addLog } from './activityLog';
 import type { KanbanStatus } from '../types';
+import { enqueue, autoAdvanceEnabled, registerLiveStatuses } from './agentQueue';
+import { advanceCard } from './pipelineAdvance';
+import { recordLaunch, recordCompletion, recordFailure, registerHealthLiveStatuses } from './agentHealth';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -29,6 +32,13 @@ export const wsConnected = writable<boolean>(false);
  * Each entry holds up to 500 lines.
  */
 export const agentConsoleOutput = writable<Map<string, ConsoleLine[]>>(new Map());
+
+/** PTY session mapping: cardId → sessionId (for xterm.js sessions) */
+export const ptySessionMap = writable<Map<string, string>>(new Map());
+
+// Register live statuses with agentQueue and agentHealth to break circular dependencies
+registerLiveStatuses(agentLiveStatuses as any);
+registerHealthLiveStatuses(agentLiveStatuses);
 
 const MAX_CONSOLE_LINES = 500;
 
@@ -62,6 +72,31 @@ let intentionalClose = false;
 const WS_URL = 'ws://localhost:4010/ws';
 const MAX_RECENT_EVENTS = 50;
 const RECONNECT_DELAY_MS = 3000;
+
+// ── Retry evaluation ──────────────────────────────────────────────────────────
+
+const MAX_RETRIES = 3;
+
+function evaluateRetry(cardId: string): {
+  shouldRetry: boolean;
+  retryCount: number;
+  backoffMs: number;
+  command: string;
+} {
+  const $iter = storeGet(iterationStates);
+  const iter = $iter[cardId];
+  const retryCount = (iter?.count ?? 0);
+  const lastCommand = iter?.lastCommand ?? '/chore';
+
+  if (retryCount >= MAX_RETRIES) {
+    return { shouldRetry: false, retryCount, backoffMs: 0, command: lastCommand };
+  }
+
+  // Exponential backoff: 1s, 2s, 4s, max 30s
+  const backoffMs = Math.min(30000, 1000 * Math.pow(2, retryCount));
+
+  return { shouldRetry: true, retryCount: retryCount + 1, backoffMs, command: lastCommand };
+}
 
 // ── Event processing ─────────────────────────────────────────────────────────
 
@@ -101,9 +136,18 @@ function processEvent(event: KanbanEvent): void {
           progress: 0,
           lastAction: message || 'Starting...',
         });
+        recordLaunch();
         if (cardId) {
           updateLifecycle(cardId, 'running');
           addLog(cardId, 'command:started', { message, command: data?.command });
+        }
+        // Track PTY sessions
+        if (data?.isPty && cardId && data?.sessionId) {
+          ptySessionMap.update(m => {
+            const next = new Map(m);
+            next.set(cardId, data.sessionId as string);
+            return next;
+          });
         }
         break;
 
@@ -118,18 +162,27 @@ function processEvent(event: KanbanEvent): void {
         break;
       }
 
-      case 'command:completed':
+      case 'command:completed': {
+        const durationMs = current.startedAt
+          ? Date.now() - new Date(current.startedAt).getTime()
+          : (data?.duration as number) || 0;
         next.set(nodeId, {
           ...current,
           state: 'done',
           progress: 100,
           lastAction: message || 'Completed',
         });
+        recordCompletion(durationMs);
         if (cardId) {
           updateLifecycle(cardId, 'completed');
-          addLog(cardId, 'lifecycle:completed', { message, score: data?.score, duration: data?.duration });
+          addLog(cardId, 'lifecycle:completed', { message, score: data?.score, duration: durationMs });
+          // Pipeline auto-advance: move to next SDLC stage
+          if (storeGet(autoAdvanceEnabled)) {
+            setTimeout(() => advanceCard(cardId), 500);
+          }
         }
         break;
+      }
 
       case 'command:failed':
         next.set(nodeId, {
@@ -137,9 +190,24 @@ function processEvent(event: KanbanEvent): void {
           state: 'error',
           lastAction: message || 'Failed',
         });
+        recordFailure();
         if (cardId) {
-          updateLifecycle(cardId, 'failed');
-          addLog(cardId, 'lifecycle:failed', { message });
+          const retryResult = evaluateRetry(cardId);
+          if (retryResult.shouldRetry) {
+            updateLifecycle(cardId, 'paused', 'error_retry');
+            addLog(cardId, 'lifecycle:paused', {
+              message,
+              reason: 'error_retry',
+              retryCount: retryResult.retryCount,
+              backoffMs: retryResult.backoffMs,
+            });
+            setTimeout(() => {
+              enqueue(cardId, retryResult.command, '', retryResult.retryCount);
+            }, retryResult.backoffMs);
+          } else {
+            updateLifecycle(cardId, 'failed');
+            addLog(cardId, 'lifecycle:failed', { message, retriesExhausted: true });
+          }
         }
         break;
 
@@ -196,6 +264,15 @@ function processEvent(event: KanbanEvent): void {
         }
         break;
 
+      case 'card:artifact': {
+        const filePath = data?.filePath as string;
+        if (cardId && filePath) {
+          setCardArtifact(cardId, filePath);
+          addLog(cardId, 'card:artifact', { filePath, message });
+        }
+        break;
+      }
+
       case 'card:moved': {
         const toCol = (data?.to as string) || (data?.toColumn as string);
         if (cardId && toCol) {
@@ -246,21 +323,44 @@ function connect(): void {
         type: string;
         events?: KanbanEvent[];
         event?: KanbanEvent;
+        activeSessions?: Record<string, { sessionId: string; cardId?: string; state?: string }>;
         sessionId?: string;
         cardId?: string | null;
         data?: string;
         timestamp?: string;
       };
 
-      if (msg.type === 'init' && Array.isArray(msg.events)) {
+      if (msg.type === 'init') {
         // Seed recentEvents with last 10 from server
-        recentEvents.update(list => {
-          const combined = [...(msg.events ?? []), ...list];
-          return combined.slice(-MAX_RECENT_EVENTS);
-        });
-        // Process each for live status
-        for (const e of msg.events ?? []) {
-          processEvent(e);
+        if (Array.isArray(msg.events)) {
+          recentEvents.update(list => {
+            const combined = [...(msg.events ?? []), ...list];
+            return combined.slice(-MAX_RECENT_EVENTS);
+          });
+          // Process each for live status
+          for (const e of msg.events ?? []) {
+            processEvent(e);
+          }
+        }
+
+        // Reconcile: mark stale "working" statuses that have no active server session
+        if (msg.activeSessions) {
+          const serverCardIds = new Set<string>();
+          for (const s of Object.values(msg.activeSessions)) {
+            if (s.cardId) serverCardIds.add(s.cardId);
+            serverCardIds.add(s.sessionId);
+          }
+          agentLiveStatuses.update(map => {
+            const next = new Map(map);
+            for (const [key, status] of next) {
+              if (status.state === 'working' && !serverCardIds.has(key)) {
+                // This session no longer exists on the server — mark as lost
+                next.set(key, { ...status, state: 'error', lastAction: 'Session lost (server restarted)' });
+                if (key) updateLifecycle(key, 'paused', 'error_retry');
+              }
+            }
+            return next;
+          });
         }
       } else if (msg.type === 'event' && msg.event) {
         processEvent(msg.event);
@@ -302,8 +402,16 @@ function connect(): void {
 
 async function loadBoardFromServer(): Promise<void> {
   try {
-    const res = await fetch('.kanban/board.json?t=' + Date.now());
-    if (!res.ok) return;
+    // Fetch from event-server API to get the authoritative board state
+    const res = await fetch(`${EVENT_SERVER}/board/current?t=${Date.now()}`);
+    if (!res.ok) {
+      // Fallback to vite-served static file
+      const fallback = await fetch('.kanban/board.json?t=' + Date.now());
+      if (!fallback.ok) return;
+      const board = await fallback.json();
+      mergeBoardState(board);
+      return;
+    }
     const board = await res.json();
     mergeBoardState(board);
   } catch {
@@ -384,15 +492,24 @@ export async function loadLogsForSession(sessionId: string, cardId?: string): Pr
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+// ── Browser close cleanup ─────────────────────────────────────────────────────
+
+function onBeforeUnload(): void {
+  // Use sendBeacon to reliably stop all agents when browser/tab closes
+  navigator.sendBeacon(`${EVENT_SERVER}/agent/stop-all`, JSON.stringify({ reason: 'browser_closed' }));
+}
+
 /** Connect to the event server WebSocket. Safe to call multiple times. */
 export function connectEventServer(): void {
   intentionalClose = false;
+  window.addEventListener('beforeunload', onBeforeUnload);
   connect();
 }
 
 /** Disconnect from the event server WebSocket and cancel auto-reconnect. */
 export function disconnectEventServer(): void {
   intentionalClose = true;
+  window.removeEventListener('beforeunload', onBeforeUnload);
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;

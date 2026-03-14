@@ -9,6 +9,30 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
+import { createRequire } from 'module';
+
+// node-pty is a native module — use createRequire for ESM compat
+const require = createRequire(import.meta.url);
+let pty;
+try {
+  pty = require('node-pty');
+} catch {
+  console.warn('[event-server] node-pty not available — PTY mode disabled');
+}
+
+// Resolve claude binary path at startup
+// node-pty can't spawn shebang scripts directly on macOS — spawn node + script path
+import { execSync } from 'child_process';
+let CLAUDE_SCRIPT = '';
+let CLAUDE_NODE = process.execPath; // Use the same node binary
+try {
+  const binPath = execSync('which claude').toString().trim();
+  // Resolve symlink to get the actual .js file
+  CLAUDE_SCRIPT = fs.realpathSync(binPath);
+  console.log(`[event-server] Claude script: ${CLAUDE_SCRIPT} (node: ${CLAUDE_NODE})`);
+} catch {
+  console.warn('[event-server] Claude binary not found in PATH');
+}
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -184,11 +208,81 @@ function resolveSlashCommand(command, args) {
 
 // ── In-memory state ──────────────────────────────────────────────────────────
 
+const MAX_SERVER_CONCURRENT = 5; // Server-side concurrency cap
 const MAX_EVENTS = 1000;
 const events = [];                 // KanbanEvent[]
 const agentStatuses = new Map();   // sessionId → { sessionId, pid, cwd, command, state, startedAt }
 const agentProcesses = new Map();  // sessionId → child process (for stdin write)
+const ptyProcesses = new Map();    // sessionId → { pty, cardId, subscribers: Set<wsClient> }
 const wsClients = new Set();       // Set<WebSocket-like>
+
+/**
+ * Stop ALL running agent sessions.
+ * Called when browser disconnects (last WS client gone) or via POST /agent/stop-all.
+ */
+function stopAllAgents(reason = 'cleanup') {
+  let killed = 0;
+  const allSids = [...agentStatuses.keys()];
+
+  for (const sid of allSids) {
+    const s = agentStatuses.get(sid);
+    if (!s || s.state === 'stopped' || s.state === 'completed') continue;
+
+    // Kill regular child process
+    const child = agentProcesses.get(sid);
+    if (child && !child.killed) {
+      try {
+        child.kill('SIGTERM');
+        setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 3000);
+        killed++;
+      } catch { /* already dead */ }
+    }
+    agentProcesses.delete(sid);
+
+    // Kill PTY process
+    const ptySess = ptyProcesses.get(sid);
+    if (ptySess) {
+      try { ptySess.pty.kill(); killed++; } catch {}
+      ptyProcesses.delete(sid);
+    }
+
+    // Update state
+    s.state = 'stopped';
+    agentStatuses.set(sid, s);
+
+    // Broadcast stop event
+    const stopEvent = {
+      id: randomUUID(),
+      type: 'command:failed',
+      timestamp: new Date().toISOString(),
+      source: 'system',
+      data: { sessionId: sid, exitCode: -1, cardId: s.cardId || null, reason },
+    };
+    addEvent(stopEvent);
+    broadcast({ type: 'event', event: stopEvent });
+
+    // End session in DB
+    if (dbModule && dbModule.endSession) {
+      try { dbModule.endSession(sid, { token_usage: 0 }); } catch {}
+    }
+  }
+
+  if (killed > 0) {
+    console.log(`[event-server] Stopped ${killed} agent(s) — reason: ${reason}`);
+  }
+  return killed;
+}
+
+/** When a WS client disconnects, log it but do NOT auto-kill agents.
+ *  Agents are only stopped via:
+ *  - POST /agent/stop-all (browser beforeunload beacon)
+ *  - POST /agent/stop (single tab close)
+ *  - Manual intervention
+ *  This prevents HMR reloads / page refreshes from killing running agents.
+ */
+function onWsClientDisconnected() {
+  console.log(`[WS] Client disconnected (remaining: ${wsClients.size})`);
+}
 
 // ── WebSocket upgrade (no ws package — native HTTP upgrade) ──────────────────
 
@@ -344,12 +438,33 @@ function createWsClient(socket) {
         // Close frame
         alive = false;
         wsClients.delete(client);
+        // Remove from all PTY subscriptions
+        for (const [, sess] of ptyProcesses) { sess.subscribers.delete(client); }
         socket.destroy();
+        onWsClientDisconnected();
       } else if (frame.opcode === 0x9) {
         // Ping — respond with pong
         try { socket.write(encodePong()); } catch { /* ignore */ }
       } else if (frame.opcode === 0xA) {
         // Pong — keep alive confirmed
+      } else if (frame.opcode === 0x1 && frame.payload) {
+        // Text frame — handle PTY commands from client
+        try {
+          const msg = JSON.parse(frame.payload.toString('utf8'));
+          if (msg.type === 'pty:subscribe' && msg.sessionId) {
+            const sess = ptyProcesses.get(msg.sessionId);
+            if (sess) sess.subscribers.add(client);
+          } else if (msg.type === 'pty:unsubscribe' && msg.sessionId) {
+            const sess = ptyProcesses.get(msg.sessionId);
+            if (sess) sess.subscribers.delete(client);
+          } else if (msg.type === 'pty:input' && msg.sessionId && msg.data) {
+            const sess = ptyProcesses.get(msg.sessionId);
+            if (sess) sess.pty.write(msg.data);
+          } else if (msg.type === 'pty:resize' && msg.sessionId) {
+            const sess = ptyProcesses.get(msg.sessionId);
+            if (sess && msg.cols && msg.rows) sess.pty.resize(msg.cols, msg.rows);
+          }
+        } catch { /* Ignore non-JSON or malformed messages */ }
       }
     }
   });
@@ -357,14 +472,131 @@ function createWsClient(socket) {
   socket.on('close', () => {
     alive = false;
     wsClients.delete(client);
+    for (const [, sess] of ptyProcesses) { sess.subscribers.delete(client); }
+    onWsClientDisconnected();
   });
 
   socket.on('error', () => {
     alive = false;
     wsClients.delete(client);
+    for (const [, sess] of ptyProcesses) { sess.subscribers.delete(client); }
+    onWsClientDisconnected();
   });
 
   return client;
+}
+
+// ── Board helpers — read/write .kanban/board.json server-side ─────────────────
+
+function readBoard() {
+  try {
+    return JSON.parse(fs.readFileSync(BOARD_PATH, 'utf8'));
+  } catch {
+    return { cards: [], syncedAt: Date.now() };
+  }
+}
+
+function writeBoard(board) {
+  fs.mkdirSync(path.dirname(BOARD_PATH), { recursive: true });
+  fs.writeFileSync(BOARD_PATH, JSON.stringify(board, null, 2), 'utf8');
+  if (board.cards && Array.isArray(board.cards)) {
+    syncCardsToDb(board.cards);
+  }
+}
+
+/**
+ * Ensure a card exists in board.json. Creates it if missing.
+ * Returns the card object (existing or newly created).
+ */
+function ensureCardInBoard(cardId, { title, command, section = 'knowledge-graph', column = 'design' } = {}) {
+  const board = readBoard();
+  let card = board.cards.find(c => c.id === cardId);
+  if (card) return card;
+
+  // Derive a clean title from the command or cardId
+  const label = title || command?.replace(/^\/\w+\s*/, '').replace(/["']/g, '').slice(0, 80) || cardId;
+  const now = new Date().toISOString();
+
+  card = {
+    id: cardId,
+    title: label,
+    label,
+    section,
+    cat: section,
+    column_id: column,
+    column,
+    status: column,
+    lifecycleState: 'started',
+    lifecycle: 'started',
+    priority: 'medium',
+    agent: null,
+    agent_type: command?.split(/\s/)[0]?.replace('/', '') || null,
+    filePath: null,
+    artifactPath: null,
+    uploadPath: null,
+    type: 'spec',
+    isLocal: false,
+    iterationCount: 0,
+    iterationScore: 0,
+    metadata: { type: 'spec', cat: section, keywords: [], createdBy: 'event-server' },
+    createdAt: now,
+    updatedAt: now,
+  };
+  board.cards.push(card);
+  board.syncedAt = Date.now();
+  writeBoard(board);
+  console.log(`[board] Auto-created card: ${cardId} → column "${column}"`);
+  broadcast({ type: 'board:updated', timestamp: now });
+  return card;
+}
+
+/**
+ * Move a card to a new column in board.json.
+ */
+function moveCardInBoard(cardId, toColumn) {
+  const board = readBoard();
+  const card = board.cards.find(c => c.id === cardId);
+  if (!card) return false;
+  if (card.column_id === toColumn) return true; // already there
+
+  const from = card.column_id;
+  card.column_id = toColumn;
+  card.column = toColumn;
+  card.status = toColumn;
+  card.updatedAt = new Date().toISOString();
+
+  // Update lifecycle based on column
+  if (toColumn === 'done') {
+    card.lifecycleState = 'completed';
+    card.lifecycle = 'completed';
+  } else if (toColumn === 'develop' || toColumn === 'testing') {
+    card.lifecycleState = 'running';
+    card.lifecycle = 'running';
+  }
+
+  board.syncedAt = Date.now();
+  writeBoard(board);
+  console.log(`[board] Card ${cardId} moved: ${from} → ${toColumn}`);
+  broadcast({ type: 'board:updated', timestamp: new Date().toISOString() });
+  return true;
+}
+
+/**
+ * Update a card's artifact path in board.json when a spec file is detected.
+ */
+function setCardArtifactInBoard(cardId, filePath) {
+  const board = readBoard();
+  const card = board.cards.find(c => c.id === cardId);
+  if (!card) return false;
+
+  card.artifactPath = filePath;
+  card.filePath = filePath;
+  card.updatedAt = new Date().toISOString();
+  board.syncedAt = Date.now();
+  writeBoard(board);
+  console.log(`[board] Card ${cardId} artifact: ${filePath}`);
+  broadcast({ type: 'board:updated', timestamp: new Date().toISOString() });
+  return true;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -509,6 +741,13 @@ async function handleRequest(req, res) {
 
   // ── POST /agent/launch ───────────────────────────────────────────────────
   if (req.method === 'POST' && urlPath === '/agent/launch') {
+    // Concurrency guard
+    const runningCount = [...agentStatuses.values()].filter(s => s.state === 'running').length;
+    if (runningCount >= MAX_SERVER_CONCURRENT) {
+      send(res, 429, { error: 'Too many concurrent agents', running: runningCount, max: MAX_SERVER_CONCURRENT }, cors);
+      return;
+    }
+
     let body;
     try { body = await readBody(req); }
     catch {
@@ -533,7 +772,7 @@ async function handleRequest(req, res) {
       const cleanEnv = { ...process.env };
       delete cleanEnv.CLAUDECODE;
 
-      child = spawn('claude', ['-p', fullPrompt], {
+      child = spawn('claude', ['-p', '--output-format', 'stream-json', fullPrompt], {
         cwd,
         env: cleanEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -563,6 +802,12 @@ async function handleRequest(req, res) {
     agentStatuses.set(sessionId, status);
     agentProcesses.set(sessionId, child);
 
+    // Auto-create card in board.json if it doesn't exist yet
+    if (cardId) {
+      ensureCardInBoard(cardId, { command: displayCmd, column: 'design' });
+      moveCardInBoard(cardId, 'develop');
+    }
+
     // Emit launch event
     const launchEvent = {
       id: randomUUID(),
@@ -574,36 +819,74 @@ async function handleRequest(req, res) {
     addEvent(launchEvent);
     broadcast({ type: 'event', event: launchEvent });
 
+    // Buffer for incomplete JSON lines from stream-json output
+    let stdoutBuf = '';
     child.stdout.on('data', (chunk) => {
-      const text = chunk.toString('utf8');
-      const ts = new Date().toISOString();
-      const progressEvent = {
-        id: randomUUID(),
-        type: 'command:progress',
-        timestamp: ts,
-        source: 'claude',
-        data: { sessionId, output: text.slice(0, 500), cardId },
-      };
-      addEvent(progressEvent);
-      broadcast({ type: 'event', event: progressEvent });
+      stdoutBuf += chunk.toString('utf8');
+      const lines = stdoutBuf.split('\n');
+      stdoutBuf = lines.pop() || ''; // Keep incomplete last line in buffer
 
-      // Broadcast dedicated agent:stdout event for console panel
-      broadcast({
-        type: 'agent:stdout',
-        sessionId,
-        cardId,
-        data: text.slice(0, 2000),
-        timestamp: ts,
-      });
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const ts = new Date().toISOString();
 
-      // Persist to SQLite
-      persistLog(sessionId, cardId, 'stdout', text.slice(0, 2000), ts);
+        // Try to parse stream-json format
+        let displayText = line;
+        try {
+          const obj = JSON.parse(line);
+          // stream-json types: message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop, result
+          if (obj.type === 'content_block_delta' && obj.delta?.text) {
+            displayText = obj.delta.text;
+          } else if (obj.type === 'assistant' && obj.content) {
+            // Full message content
+            const textParts = obj.content.filter(c => c.type === 'text').map(c => c.text);
+            displayText = textParts.join('') || line;
+          } else if (obj.type === 'result' && obj.result) {
+            displayText = `[Result] cost: $${obj.cost_usd?.toFixed(4) || '?'}, duration: ${obj.duration_ms || '?'}ms`;
+          } else if (obj.type === 'system' || obj.type === 'message_start' || obj.type === 'message_stop' || obj.type === 'content_block_stop') {
+            continue; // Skip meta events
+          } else if (obj.type === 'content_block_start') {
+            continue; // Skip block start markers
+          } else if (obj.type === 'message_delta') {
+            continue; // Skip message deltas (stop reason etc)
+          } else {
+            displayText = line.slice(0, 200);
+          }
+        } catch {
+          // Not JSON — use raw text (fallback for non-stream-json mode)
+          displayText = line;
+        }
 
-      // Update lastAction in status
-      const s = agentStatuses.get(sessionId);
-      if (s) {
-        s.lastAction = text.trim().slice(0, 120);
-        agentStatuses.set(sessionId, s);
+        if (!displayText || !displayText.trim()) continue;
+
+        const progressEvent = {
+          id: randomUUID(),
+          type: 'command:progress',
+          timestamp: ts,
+          source: 'claude',
+          data: { sessionId, output: displayText.slice(0, 500), cardId },
+        };
+        addEvent(progressEvent);
+        broadcast({ type: 'event', event: progressEvent });
+
+        // Broadcast dedicated agent:stdout event for console panel
+        broadcast({
+          type: 'agent:stdout',
+          sessionId,
+          cardId,
+          data: displayText.slice(0, 2000),
+          timestamp: ts,
+        });
+
+        // Persist to SQLite
+        persistLog(sessionId, cardId, 'stdout', displayText.slice(0, 2000), ts);
+
+        // Update lastAction in status
+        const s = agentStatuses.get(sessionId);
+        if (s) {
+          s.lastAction = displayText.trim().slice(0, 120);
+          agentStatuses.set(sessionId, s);
+        }
       }
     });
 
@@ -650,6 +933,15 @@ async function handleRequest(req, res) {
       addEvent(doneEvent);
       broadcast({ type: 'event', event: doneEvent });
 
+      // Move card in board.json based on exit code
+      if (cardId) {
+        if (code === 0) {
+          moveCardInBoard(cardId, 'done');
+        } else {
+          moveCardInBoard(cardId, 'task');
+        }
+      }
+
       // End session in DB
       if (dbModule && dbModule.endSession) {
         try { dbModule.endSession(sessionId, { token_usage: 0 }); } catch { /* best-effort */ }
@@ -694,7 +986,7 @@ async function handleRequest(req, res) {
     let child;
     try {
       // Use --continue to resume the last conversation in the same directory
-      child = spawn('claude', ['-p', '--continue', message], {
+      child = spawn('claude', ['-p', '--output-format', 'stream-json', '--continue', message], {
         cwd,
         env: cleanEnv,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -745,18 +1037,45 @@ async function handleRequest(req, res) {
       timestamp: new Date().toISOString(),
     });
 
-    // Pipe stdout/stderr back through WebSocket
+    // Pipe stdout/stderr back through WebSocket (parse stream-json)
+    let sendBuf = '';
     child.stdout.on('data', (chunk) => {
-      const text = chunk.toString('utf8');
-      const ts = new Date().toISOString();
-      broadcast({
-        type: 'agent:stdout',
-        sessionId: effectiveCardId || newSessionId,
-        cardId: effectiveCardId,
-        data: text.slice(0, 2000),
-        timestamp: ts,
-      });
-      persistLog(newSessionId, effectiveCardId, 'stdout', text.slice(0, 2000), ts);
+      sendBuf += chunk.toString('utf8');
+      const lines = sendBuf.split('\n');
+      sendBuf = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const ts = new Date().toISOString();
+        let displayText = line;
+        try {
+          const obj = JSON.parse(line);
+          if (obj.type === 'content_block_delta' && obj.delta?.text) {
+            displayText = obj.delta.text;
+          } else if (obj.type === 'assistant' && obj.content) {
+            const textParts = obj.content.filter(c => c.type === 'text').map(c => c.text);
+            displayText = textParts.join('') || line;
+          } else if (obj.type === 'result' && obj.result) {
+            displayText = `[Result] cost: $${obj.cost_usd?.toFixed(4) || '?'}, duration: ${obj.duration_ms || '?'}ms`;
+          } else if (obj.type === 'system' || obj.type === 'message_start' || obj.type === 'message_stop' || obj.type === 'content_block_stop' || obj.type === 'content_block_start' || obj.type === 'message_delta') {
+            continue;
+          } else {
+            displayText = line.slice(0, 200);
+          }
+        } catch {
+          displayText = line;
+        }
+        if (!displayText || !displayText.trim()) continue;
+
+        broadcast({
+          type: 'agent:stdout',
+          sessionId: effectiveCardId || newSessionId,
+          cardId: effectiveCardId,
+          data: displayText.slice(0, 2000),
+          timestamp: ts,
+        });
+        persistLog(newSessionId, effectiveCardId, 'stdout', displayText.slice(0, 2000), ts);
+      }
     });
 
     child.stderr.on('data', (chunk) => {
@@ -786,6 +1105,298 @@ async function handleRequest(req, res) {
     });
 
     send(res, 200, { sessionId: newSessionId, pid: child.pid, cardId: effectiveCardId }, cors);
+    return;
+  }
+
+  // ── POST /agent/pty — launch interactive Claude session via PTY ────────────
+  if (req.method === 'POST' && urlPath === '/agent/pty') {
+    if (!pty) {
+      send(res, 503, { error: 'node-pty not available' }, cors);
+      return;
+    }
+
+    // Concurrency guard
+    const ptyRunningCount = [...agentStatuses.values()].filter(s => s.state === 'running').length;
+    if (ptyRunningCount >= MAX_SERVER_CONCURRENT) {
+      send(res, 429, { error: 'Too many concurrent agents', running: ptyRunningCount, max: MAX_SERVER_CONCURRENT }, cors);
+      return;
+    }
+
+    let body;
+    try { body = await readBody(req); }
+    catch {
+      send(res, 400, { error: 'Invalid JSON' }, cors);
+      return;
+    }
+
+    const { cardId = null, command = null, args = '', cwd: userCwd = process.cwd(), cols = 120, rows = 30 } = body;
+    const sessionId = randomUUID();
+
+    // Remove CLAUDECODE env var to allow nested launches
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.CLAUDECODE;
+
+    // Build claude args — always launch in interactive mode
+    // If a command is provided, type it as the first prompt after startup
+    const claudeArgs = [CLAUDE_SCRIPT];
+    let displayCmd = 'claude (interactive)';
+    let initialPrompt = null;
+    if (command) {
+      const fullPrompt = resolveSlashCommand(command, args);
+      initialPrompt = fullPrompt;
+      displayCmd = args ? `${command} ${args}` : command;
+    }
+
+    let ptyProc;
+    try {
+      ptyProc = pty.spawn(CLAUDE_NODE, claudeArgs, {
+        name: 'xterm-256color',
+        cols,
+        rows,
+        cwd: userCwd,
+        env: cleanEnv,
+      });
+    } catch (err) {
+      send(res, 500, { error: `Failed to spawn PTY: ${err.message}` }, cors);
+      return;
+    }
+
+    const ptySession = {
+      pty: ptyProc,
+      cardId,
+      sessionId,
+      pid: ptyProc.pid,
+      subscribers: new Set(),  // wsClients subscribed to this PTY
+    };
+    ptyProcesses.set(sessionId, ptySession);
+
+    // Track in agentStatuses too for pause/resume/status
+    agentStatuses.set(sessionId, {
+      sessionId,
+      pid: ptyProc.pid,
+      cwd: userCwd,
+      command: displayCmd,
+      state: 'running',
+      startedAt: new Date().toISOString(),
+      cardId,
+      isPty: true,
+    });
+
+    // Record session in DB
+    if (dbModule && dbModule.startSession) {
+      try { dbModule.startSession({ id: sessionId, card_id: cardId, command: displayCmd }); } catch {}
+    }
+
+    // Auto-create card in board.json if it doesn't exist yet
+    if (cardId) {
+      ensureCardInBoard(cardId, { command: displayCmd, column: 'design' });
+      // Also move to 'develop' since agent is now running
+      moveCardInBoard(cardId, 'develop');
+    }
+
+    // If a command was provided, type it into the interactive session after startup
+    if (initialPrompt) {
+      let promptSent = false;
+      let dataChunks = 0;
+      const stripAnsiLocal = (str) => str.replace(/\x1B\[[0-9;]*[a-zA-Z]|\x1B\].*?\x07|\x1B[()][A-Z0-9]/g, '');
+
+      const earlyListener = (data) => {
+        if (promptSent) return;
+        dataChunks++;
+        const clean = stripAnsiLocal(data);
+        // Detect Claude CLI ready: various prompt indicators
+        // "? for shortcuts", "tips", the › prompt char, or just enough output chunks
+        const isReady = clean.includes('for shortcuts')
+          || clean.includes('? for')
+          || clean.includes('tips')
+          || data.includes('\u203A')  // › character
+          || data.includes('>')       // fallback prompt char
+          || dataChunks >= 5;         // after 5 data chunks, CLI is likely ready
+
+        if (isReady) {
+          promptSent = true;
+          console.log(`[pty] Prompt ready detected after ${dataChunks} chunks, sending command...`);
+          setTimeout(() => {
+            try { ptyProc.write(initialPrompt + '\r'); } catch {}
+          }, 800);
+        }
+      };
+      ptyProc.onData(earlyListener);
+      // Fallback: if prompt not detected in 4s, send anyway
+      setTimeout(() => {
+        if (!promptSent) {
+          promptSent = true;
+          console.log(`[pty] Fallback: sending prompt after 4s timeout (${dataChunks} chunks seen)`);
+          try { ptyProc.write(initialPrompt + '\r'); } catch {}
+        }
+      }, 4000);
+    }
+
+    // ── PTY output intelligence: detect artifacts, status changes ──────────
+    // Strip ANSI escape codes for pattern matching
+    const stripAnsi = (str) => str.replace(/\x1B\[[0-9;]*[a-zA-Z]|\x1B\].*?\x07/g, '');
+    let ptyOutputBuf = '';
+
+    function scanPtyOutput(raw) {
+      ptyOutputBuf += raw;
+      const clean = stripAnsi(ptyOutputBuf);
+
+      // Detect file creation: "File path — path/to/file.md" or "Created file: path"
+      const fileMatch = clean.match(/File path\s*[—–-]\s*(\S+\.(?:md|ts|js|json|yaml|yml|svelte))/i)
+                     || clean.match(/(?:Created|Wrote|Saved)\s+(?:file:?\s*)?(\S+\.(?:md|ts|js|json|yaml|yml|svelte))/i);
+      if (fileMatch && cardId) {
+        const filePath = fileMatch[1];
+        const artifactEvent = {
+          id: randomUUID(),
+          type: 'card:artifact',
+          timestamp: new Date().toISOString(),
+          source: 'claude',
+          cardId,
+          data: { sessionId, cardId, filePath },
+        };
+        addEvent(artifactEvent);
+        broadcast({ type: 'event', event: artifactEvent });
+        // Also update board.json with artifact path
+        setCardArtifactInBoard(cardId, filePath);
+        // Clear buffer after match to avoid re-triggering
+        ptyOutputBuf = '';
+      }
+
+      // Keep buffer from growing unbounded (last 2000 chars for pattern matching)
+      if (ptyOutputBuf.length > 4000) {
+        ptyOutputBuf = ptyOutputBuf.slice(-2000);
+      }
+    }
+
+    // Stream PTY output to all subscribers + broadcast as agent:stdout
+    ptyProc.onData((data) => {
+      const msg = JSON.stringify({ type: 'pty:output', sessionId, cardId, data });
+      // Send to subscribers of this specific PTY session
+      for (const client of ptySession.subscribers) {
+        try { client.send(msg); } catch {}
+      }
+      // Also broadcast as agent:stdout for the console panel
+      broadcast({
+        type: 'agent:stdout',
+        sessionId,
+        cardId,
+        data: data.slice(0, 2000),
+        timestamp: new Date().toISOString(),
+      });
+
+      // Scan for artifacts and workflow signals
+      scanPtyOutput(data);
+    });
+
+    ptyProc.onExit(({ exitCode }) => {
+      const s = agentStatuses.get(sessionId);
+      if (s) {
+        s.state = exitCode === 0 ? 'done' : 'error';
+        agentStatuses.set(sessionId, s);
+      }
+
+      const doneEvent = {
+        id: randomUUID(),
+        type: exitCode === 0 ? 'command:completed' : 'command:failed',
+        timestamp: new Date().toISOString(),
+        source: 'claude',
+        data: { sessionId, exitCode, cardId },
+      };
+      addEvent(doneEvent);
+      broadcast({ type: 'event', event: doneEvent });
+
+      // On successful exit, move card to 'done' column (both board.json + event)
+      if (exitCode === 0 && cardId) {
+        moveCardInBoard(cardId, 'done');
+        const moveEvent = {
+          id: randomUUID(),
+          type: 'card:moved',
+          timestamp: new Date().toISOString(),
+          source: 'system',
+          cardId,
+          data: { sessionId, cardId, to: 'done', message: 'Agent completed successfully' },
+        };
+        addEvent(moveEvent);
+        broadcast({ type: 'event', event: moveEvent });
+      } else if (exitCode !== 0 && cardId) {
+        // On failure, move card back to 'task' so it can be retried
+        moveCardInBoard(cardId, 'task');
+      }
+
+      // Notify PTY exit
+      const exitMsg = JSON.stringify({ type: 'pty:exit', sessionId, cardId, exitCode });
+      for (const client of ptySession.subscribers) {
+        try { client.send(exitMsg); } catch {}
+      }
+
+      if (dbModule && dbModule.endSession) {
+        try { dbModule.endSession(sessionId, { token_usage: 0 }); } catch {}
+      }
+      ptyProcesses.delete(sessionId);
+    });
+
+    // Broadcast launch event
+    const launchEvent = {
+      id: randomUUID(),
+      type: 'command:started',
+      timestamp: new Date().toISOString(),
+      source: 'system',
+      data: { sessionId, pid: ptyProc.pid, command: displayCmd, cwd: userCwd, cardId, isPty: true },
+    };
+    addEvent(launchEvent);
+    broadcast({ type: 'event', event: launchEvent });
+
+    send(res, 200, { sessionId, pid: ptyProc.pid, cardId, isPty: true }, cors);
+    return;
+  }
+
+  // ── POST /agent/pty/write — write to PTY stdin ──────────────────────────────
+  if (req.method === 'POST' && urlPath === '/agent/pty/write') {
+    let body;
+    try { body = await readBody(req); }
+    catch {
+      send(res, 400, { error: 'Invalid JSON' }, cors);
+      return;
+    }
+
+    const { sessionId: sid, data: inputData } = body;
+    const session = ptyProcesses.get(sid);
+    if (!session) {
+      send(res, 404, { error: 'PTY session not found' }, cors);
+      return;
+    }
+
+    try {
+      session.pty.write(inputData);
+      send(res, 200, { ok: true }, cors);
+    } catch (err) {
+      send(res, 500, { error: err.message }, cors);
+    }
+    return;
+  }
+
+  // ── POST /agent/pty/resize — resize PTY window ─────────────────────────────
+  if (req.method === 'POST' && urlPath === '/agent/pty/resize') {
+    let body;
+    try { body = await readBody(req); }
+    catch {
+      send(res, 400, { error: 'Invalid JSON' }, cors);
+      return;
+    }
+
+    const { sessionId: sid, cols, rows } = body;
+    const session = ptyProcesses.get(sid);
+    if (!session) {
+      send(res, 404, { error: 'PTY session not found' }, cors);
+      return;
+    }
+
+    try {
+      session.pty.resize(cols, rows);
+      send(res, 200, { ok: true }, cors);
+    } catch (err) {
+      send(res, 500, { error: err.message }, cors);
+    }
     return;
   }
 
@@ -913,22 +1524,30 @@ async function handleRequest(req, res) {
 
     let killed = 0;
     for (const sid of toKill) {
+      // Kill regular child process
       const child = agentProcesses.get(sid);
       if (child && !child.killed) {
         try {
           child.kill('SIGTERM');
-          // Force kill after 3s if still alive
           setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 3000);
           killed++;
         } catch { /* already dead */ }
       }
+      agentProcesses.delete(sid);
+
+      // Kill PTY process
+      const ptySess = ptyProcesses.get(sid);
+      if (ptySess) {
+        try { ptySess.pty.kill(); killed++; } catch {}
+        ptyProcesses.delete(sid);
+      }
+
       // Clean up state
       const s = agentStatuses.get(sid);
       if (s) {
         s.state = 'stopped';
         agentStatuses.set(sid, s);
       }
-      agentProcesses.delete(sid);
 
       // Broadcast stop event
       const stopEvent = {
@@ -948,6 +1567,13 @@ async function handleRequest(req, res) {
     }
 
     send(res, 200, { killed, sessions: toKill }, cors);
+    return;
+  }
+
+  // ── POST /agent/stop-all — kill ALL running agent sessions ──────────────
+  if (req.method === 'POST' && urlPath === '/agent/stop-all') {
+    const killed = stopAllAgents('browser_closed');
+    send(res, 200, { killed }, cors);
     return;
   }
 
@@ -991,6 +1617,41 @@ async function handleRequest(req, res) {
     return;
   }
 
+  // ── POST /sync/graph — rebuild graph-data.json from docs ─────────────────
+  if (req.method === 'POST' && urlPath === '/sync/graph') {
+    try {
+      const scriptPath = path.resolve(__scriptDir, 'build-graph-data.mjs');
+      const result = await new Promise((resolve, reject) => {
+        const proc = spawn(process.execPath, [scriptPath], {
+          cwd: path.resolve(__scriptDir, '..'),
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 30000,
+        });
+        let stdout = '', stderr = '';
+        proc.stdout.on('data', d => stdout += d);
+        proc.stderr.on('data', d => stderr += d);
+        proc.on('close', code => {
+          if (code === 0) resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+          else reject(new Error(`build-graph-data exited ${code}: ${stderr.trim()}`));
+        });
+        proc.on('error', reject);
+      });
+      console.log('[event-server] Graph data rebuilt:', result.stdout);
+      send(res, 200, { ok: true, output: result.stdout }, cors);
+    } catch (err) {
+      console.error('[event-server] Graph rebuild failed:', err.message);
+      send(res, 500, { error: err.message }, cors);
+    }
+    return;
+  }
+
+  // ── GET /board/current — read current board.json ─────────────────────────
+  if (req.method === 'GET' && urlPath === '/board/current') {
+    const board = readBoard();
+    send(res, 200, board, cors);
+    return;
+  }
+
   // ── POST /board ──────────────────────────────────────────────────────────
   if (req.method === 'POST' && urlPath === '/board') {
     let body;
@@ -998,6 +1659,36 @@ async function handleRequest(req, res) {
     catch {
       send(res, 400, { error: 'Invalid JSON' }, cors);
       return;
+    }
+
+    // Merge: preserve server-created cards that browser doesn't know about yet
+    if (body.cards && Array.isArray(body.cards)) {
+      const existingBoard = readBoard();
+      const browserIds = new Set(body.cards.map(c => c.id));
+
+      // Find server-side cards not in the browser payload
+      for (const serverCard of existingBoard.cards) {
+        if (!browserIds.has(serverCard.id) && serverCard.metadata?.createdBy === 'event-server') {
+          body.cards.push(serverCard);
+        }
+      }
+
+      // Also update server-managed fields (column, lifecycle) for active agent cards
+      for (const browserCard of body.cards) {
+        const serverCard = existingBoard.cards.find(c => c.id === browserCard.id);
+        if (serverCard && serverCard.metadata?.createdBy === 'event-server') {
+          // Server is authoritative for column and lifecycle of its own cards
+          browserCard.column_id = serverCard.column_id;
+          browserCard.column = serverCard.column;
+          browserCard.status = serverCard.status;
+          browserCard.lifecycleState = serverCard.lifecycleState;
+          browserCard.lifecycle = serverCard.lifecycle;
+          if (serverCard.artifactPath) {
+            browserCard.artifactPath = serverCard.artifactPath;
+            browserCard.filePath = serverCard.filePath;
+          }
+        }
+      }
     }
 
     // Write board.json
@@ -1017,6 +1708,69 @@ async function handleRequest(req, res) {
 
     broadcast({ type: 'board:updated', timestamp: new Date().toISOString() });
     send(res, 200, { success: true, db: dbSync }, cors);
+    return;
+  }
+
+  // ── GET /db/state — Full state dump from SQLite for browser sync ────────
+  if (req.method === 'GET' && urlPath === '/db/state') {
+    if (!dbModule || !dbModule.db) {
+      send(res, 503, { error: 'SQLite not available' }, cors);
+      return;
+    }
+    try {
+      const db = dbModule.db;
+      const cards = db.prepare('SELECT * FROM cards ORDER BY updated_at DESC').all();
+      const settings = db.prepare('SELECT key, value FROM settings').all();
+      const settingsMap = {};
+      for (const row of settings) {
+        try { settingsMap[row.key] = JSON.parse(row.value); } catch { settingsMap[row.key] = row.value; }
+      }
+      send(res, 200, { cards, settings: settingsMap }, cors);
+    } catch (err) {
+      send(res, 500, { error: err.message }, cors);
+    }
+    return;
+  }
+
+  // ── POST /db/state — Write full browser state into SQLite ─────────────
+  if (req.method === 'POST' && urlPath === '/db/state') {
+    if (!dbModule || !dbModule.db) {
+      send(res, 503, { error: 'SQLite not available' }, cors);
+      return;
+    }
+    let body;
+    try { body = await readBody(req); }
+    catch { send(res, 400, { error: 'Invalid JSON' }, cors); return; }
+
+    try {
+      const db = dbModule.db;
+      let settingsCount = 0;
+
+      // Sync settings (config, preferences, etc.)
+      if (body.settings && typeof body.settings === 'object') {
+        const upsert = db.prepare(`
+          INSERT INTO settings (key, value, updated_at) VALUES (@key, @value, datetime('now'))
+          ON CONFLICT(key) DO UPDATE SET value=@value, updated_at=datetime('now')
+        `);
+        const syncSettings = db.transaction((entries) => {
+          for (const [key, value] of entries) {
+            upsert.run({ key, value: typeof value === 'string' ? value : JSON.stringify(value) });
+            settingsCount++;
+          }
+        });
+        syncSettings(Object.entries(body.settings));
+      }
+
+      // Sync cards if provided
+      let cardSync = { synced: 0 };
+      if (body.cards && Array.isArray(body.cards)) {
+        cardSync = syncCardsToDb(body.cards);
+      }
+
+      send(res, 200, { ok: true, settings: settingsCount, cards: cardSync.synced }, cors);
+    } catch (err) {
+      send(res, 500, { error: err.message }, cors);
+    }
     return;
   }
 
@@ -1047,6 +1801,103 @@ async function handleRequest(req, res) {
       last_sync: db.prepare("SELECT MAX(updated_at) as t FROM cards").get().t,
     };
     send(res, 200, stats, cors);
+    return;
+  }
+
+  // ── GET /analytics — Board analytics from SQLite ────────────────────────
+  if (req.method === 'GET' && urlPath === '/analytics') {
+    if (!dbModule || !dbModule.db) {
+      send(res, 503, { error: 'SQLite not available' }, cors);
+      return;
+    }
+    try {
+      const db = dbModule.db;
+      const settings = db.prepare('SELECT key, value FROM settings').all();
+      const settingsMap = {};
+      for (const row of settings) {
+        try { settingsMap[row.key] = JSON.parse(row.value); } catch { settingsMap[row.key] = row.value; }
+      }
+
+      // Parse stores
+      const moves = settingsMap['ls:moves'] || {};
+      const agents = settingsMap['ls:agents'] || {};
+      const lifecycle = settingsMap['ls:lifecycle'] || {};
+      const localCards = settingsMap['ls:cards'] || {};
+      const iterations = settingsMap['ls:iterations'] || {};
+      const history = settingsMap['ls:history'] || [];
+      const cardUpdatedAt = settingsMap['ls:cardUpdatedAt'] || {};
+
+      // Cards by status
+      const byStatus = {};
+      for (const status of Object.values(moves)) {
+        byStatus[status] = (byStatus[status] || 0) + 1;
+      }
+
+      // Cards by type (local cards)
+      const byType = {};
+      for (const card of Object.values(localCards)) {
+        byType[card.type] = (byType[card.type] || 0) + 1;
+      }
+
+      // Lifecycle distribution
+      const byLifecycle = {};
+      for (const lc of Object.values(lifecycle)) {
+        const st = lc.state || 'idle';
+        byLifecycle[st] = (byLifecycle[st] || 0) + 1;
+      }
+
+      // Agent distribution
+      const byAgent = {};
+      for (const agent of Object.values(agents)) {
+        byAgent[agent] = (byAgent[agent] || 0) + 1;
+      }
+
+      // Activity timeline (last 7 days, grouped by day)
+      const now = Date.now();
+      const dayMs = 86400000;
+      const timeline = {};
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now - i * dayMs);
+        const key = d.toISOString().slice(0, 10);
+        timeline[key] = { created: 0, moved: 0, completed: 0, failed: 0 };
+      }
+      for (const entry of (Array.isArray(history) ? history : [])) {
+        if (!entry.timestamp) continue;
+        const key = new Date(entry.timestamp).toISOString().slice(0, 10);
+        if (!timeline[key]) continue;
+        if (entry.action === 'card:created') timeline[key].created++;
+        else if (entry.action === 'card:moved') timeline[key].moved++;
+        else if (entry.action?.startsWith('lifecycle:completed')) timeline[key].completed++;
+        else if (entry.action?.startsWith('lifecycle:failed')) timeline[key].failed++;
+      }
+
+      // Summary metrics
+      const totalCards = Object.keys(moves).length + Object.keys(localCards).length;
+      const completedCount = Object.values(lifecycle).filter(l => l.state === 'completed').length;
+      const failedCount = Object.values(lifecycle).filter(l => l.state === 'failed').length;
+      const runningCount = Object.values(lifecycle).filter(l => l.state === 'running').length;
+      const avgIterations = Object.values(iterations).length > 0
+        ? Object.values(iterations).reduce((s, i) => s + (i.count || 0), 0) / Object.values(iterations).length
+        : 0;
+
+      send(res, 200, {
+        totalCards,
+        completedCount,
+        failedCount,
+        runningCount,
+        avgIterations: Math.round(avgIterations * 10) / 10,
+        completionRate: totalCards > 0 ? Math.round((completedCount / totalCards) * 1000) / 10 : 0,
+        byStatus,
+        byType,
+        byLifecycle,
+        byAgent,
+        timeline,
+        agentCount: Object.keys(agents).length,
+        localCardCount: Object.keys(localCards).length,
+      }, cors);
+    } catch (err) {
+      send(res, 500, { error: err.message }, cors);
+    }
     return;
   }
 
@@ -1335,9 +2186,13 @@ server.on('upgrade', (req, socket, head) => {
   const client = createWsClient(socket);
   wsClients.add(client);
 
-  // Send last 10 events on connect
+  // Send last 10 events + active sessions on connect
   const recent = events.slice(-10);
-  client.send(JSON.stringify({ type: 'init', events: recent }));
+  const activeSessions = {};
+  for (const [sid, s] of agentStatuses) {
+    activeSessions[sid] = { sessionId: sid, cardId: s.cardId, state: s.state, pid: s.pid };
+  }
+  client.send(JSON.stringify({ type: 'init', events: recent, activeSessions }));
 
   console.log(`[WS] Client connected (total: ${wsClients.size})`);
 });

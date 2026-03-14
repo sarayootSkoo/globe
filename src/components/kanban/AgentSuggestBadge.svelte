@@ -11,6 +11,7 @@
 
   let suggestions = $state<import('../../lib/types').AgentSuggestion[]>([]);
   let showTooltip = $state(false);
+  let tooltipPos = $state<{ top: number; left: number }>({ top: 0, left: 0 });
 
   $effect(() => {
     const unsub = agentSuggestions.subscribe(map => {
@@ -29,6 +30,18 @@
     assignAgent(nodeId, agent);
     if (onAccept) onAccept(agent);
   }
+
+  function handleMouseEnter(e: MouseEvent) {
+    const el = e.currentTarget as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    const tooltipWidth = 240;
+    const maxLeft = window.innerWidth - tooltipWidth - 8;
+    tooltipPos = {
+      top: rect.top - 6,
+      left: Math.max(8, Math.min(rect.left, maxLeft)),
+    };
+    showTooltip = true;
+  }
 </script>
 
 {#if topSuggestion && topDef}
@@ -38,7 +51,7 @@
     class="suggest-badge"
     style="--agent-color: {topDef.color}"
     onclick={handleAccept}
-    onmouseenter={() => showTooltip = true}
+    onmouseenter={handleMouseEnter}
     onmouseleave={() => showTooltip = false}
   >
     <span class="badge-pulse"></span>
@@ -46,7 +59,7 @@
     <span class="badge-label">{topDef.label}</span>
 
     {#if showTooltip && suggestions.length > 0}
-      <div class="suggest-tooltip" onclick={(e) => e.stopPropagation()}>
+      <div class="suggest-tooltip" style="bottom: calc(100vh - {tooltipPos.top}px); left: {tooltipPos.left}px;" onclick={(e) => e.stopPropagation()}>
         <div class="tooltip-title">AI Suggestions</div>
         {#each suggestions as s}
           {@const def = AGENT_DEFS[s.agent]}
@@ -120,15 +133,14 @@
 
   /* Tooltip */
   .suggest-tooltip {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 0;
+    position: fixed;
     z-index: 200;
     background: #161922;
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 8px;
     padding: 10px 12px;
     min-width: 200px;
+    max-width: 280px;
     box-shadow: 0 8px 28px rgba(0,0,0,0.7);
     pointer-events: all;
   }

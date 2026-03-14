@@ -51,6 +51,10 @@
     navigateTo('kanban');
     openPanel = null;
   }
+  function switchToAnalytics(): void {
+    navigateTo('analytics');
+    openPanel = null;
+  }
   function handleExplore(): void {
     navigateTo('globe');
     resetMode();
@@ -130,6 +134,21 @@
       <rect x="14" y="12" width="7" height="9" rx="1"/>
     </svg>
     {#if hoveredItem === 'board' && !openPanel}<span class="tip">SDLC Board</span>{/if}
+  </button>
+
+  <button
+    class="rail-btn"
+    class:active={currentView === 'analytics'}
+    onclick={switchToAnalytics}
+    onmouseenter={() => hoveredItem = 'analytics'}
+    onmouseleave={() => hoveredItem = null}
+  >
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="3" y="12" width="4" height="9" rx="1"/>
+      <rect x="10" y="7" width="4" height="14" rx="1"/>
+      <rect x="17" y="3" width="4" height="18" rx="1"/>
+    </svg>
+    {#if hoveredItem === 'analytics' && !openPanel}<span class="tip">Analytics</span>{/if}
   </button>
 
   <div class="rail-div"></div>
