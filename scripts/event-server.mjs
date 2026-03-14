@@ -215,6 +215,7 @@ const agentStatuses = new Map();   // sessionId → { sessionId, pid, cwd, comma
 const agentProcesses = new Map();  // sessionId → child process (for stdin write)
 const ptyProcesses = new Map();    // sessionId → { pty, cardId, subscribers: Set<wsClient> }
 const wsClients = new Set();       // Set<WebSocket-like>
+const completedRecordings = new Map(); // sessionId → recording chunks (retained after PTY exit)
 
 /**
  * Stop ALL running agent sessions.
@@ -1167,6 +1168,8 @@ async function handleRequest(req, res) {
       sessionId,
       pid: ptyProc.pid,
       subscribers: new Set(),  // wsClients subscribed to this PTY
+      recording: [],
+      recordingStartedAt: Date.now(),
     };
     ptyProcesses.set(sessionId, ptySession);
 
@@ -1237,7 +1240,34 @@ async function handleRequest(req, res) {
     const stripAnsi = (str) => str.replace(/\x1B\[[0-9;]*[a-zA-Z]|\x1B\].*?\x07/g, '');
     let ptyOutputBuf = '';
 
+    // Real-time artifact detection from PTY output (per-chunk scan)
+    const ARTIFACT_PATTERNS = [
+      /(?:Created|Wrote|Updated|Modified|Saved)\s+(?:file\s+)?['"`]?([^\s'"`]+\.\w+)/i,
+      /File\s+path[:\s-]+['"`]?([^\s'"`]+\.\w+)/i,
+      /(?:^|\s)([a-zA-Z][\w/.-]+\.(?:ts|js|svelte|md|json|css|html))\s+(?:created|updated|written)/i,
+    ];
+
+    function checkForArtifacts(text, _sessionId, _cardId) {
+      if (!_cardId) return;
+      const clean = stripAnsi(text);
+      for (const pattern of ARTIFACT_PATTERNS) {
+        const match = clean.match(pattern);
+        if (match && match[1]) {
+          broadcast({
+            type: 'file:created',
+            source: 'claude',
+            timestamp: new Date().toISOString(),
+            cardId: _cardId,
+            data: { sessionId: _sessionId, filePath: match[1] },
+          });
+        }
+      }
+    }
+
     function scanPtyOutput(raw) {
+      // Real-time per-chunk artifact detection
+      checkForArtifacts(raw, sessionId, cardId);
+
       ptyOutputBuf += raw;
       const clean = stripAnsi(ptyOutputBuf);
 
@@ -1270,6 +1300,15 @@ async function handleRequest(req, res) {
 
     // Stream PTY output to all subscribers + broadcast as agent:stdout
     ptyProc.onData((data) => {
+      // Track last activity time for TTL/heartbeat checks
+      ptySession.lastActivityAt = Date.now();
+
+      // Record timestamped PTY output for later retrieval
+      ptySession.recording.push({
+        t: Date.now() - ptySession.recordingStartedAt,
+        d: data,
+      });
+
       const msg = JSON.stringify({ type: 'pty:output', sessionId, cardId, data });
       // Send to subscribers of this specific PTY session
       for (const client of ptySession.subscribers) {
@@ -1332,6 +1371,17 @@ async function handleRequest(req, res) {
       if (dbModule && dbModule.endSession) {
         try { dbModule.endSession(sessionId, { token_usage: 0 }); } catch {}
       }
+
+      // Save recording for later retrieval before removing session
+      if (ptySession.recording && ptySession.recording.length > 0) {
+        completedRecordings.set(sessionId, ptySession.recording);
+        // Keep max 20 recordings to avoid unbounded memory growth
+        if (completedRecordings.size > 20) {
+          const oldest = completedRecordings.keys().next().value;
+          completedRecordings.delete(oldest);
+        }
+      }
+
       ptyProcesses.delete(sessionId);
     });
 
@@ -1574,6 +1624,15 @@ async function handleRequest(req, res) {
   if (req.method === 'POST' && urlPath === '/agent/stop-all') {
     const killed = stopAllAgents('browser_closed');
     send(res, 200, { killed }, cors);
+    return;
+  }
+
+  // ── GET /agent/recording/:sessionId — retrieve PTY session recording ─────
+  if (req.method === 'GET' && urlPath.startsWith('/agent/recording/')) {
+    const recordingSessionId = urlPath.split('/').pop();
+    const activeSession = ptyProcesses.get(recordingSessionId);
+    const recording = activeSession?.recording || completedRecordings.get(recordingSessionId) || [];
+    send(res, 200, { sessionId: recordingSessionId, recording }, cors);
     return;
   }
 
@@ -2217,6 +2276,34 @@ server.listen(PORT, () => {
   console.log(`[event-server] Listening on http://localhost:${PORT}`);
   console.log(`[event-server] WebSocket at ws://localhost:${PORT}/ws`);
 });
+
+// ── Session heartbeat — detect stale/zombie sessions ─────────────────────────
+
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const HEARTBEAT_INTERVAL = 60 * 1000;  // check every 60s
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [sessionId, session] of ptyProcesses) {
+    // Check if session has been running too long without output
+    const lastActivity = session.lastActivityAt || session.startedAt || now;
+    if (now - lastActivity > SESSION_TTL_MS) {
+      console.log(`[heartbeat] Session ${sessionId} timed out after 30min idle`);
+      // Kill the PTY process
+      try { session.pty.kill('SIGTERM'); } catch {}
+      // Broadcast timeout event
+      const timeoutEvent = {
+        id: randomUUID(),
+        type: 'lifecycle:failed',
+        source: 'system',
+        timestamp: new Date().toISOString(),
+        data: { sessionId, reason: 'session_timeout', message: 'Session timed out (30min idle)' },
+      };
+      addEvent(timeoutEvent);
+      broadcast({ type: 'event', event: timeoutEvent });
+    }
+  }
+}, HEARTBEAT_INTERVAL);
 
 // ── Graceful Shutdown ────────────────────────────────────────────────────────
 

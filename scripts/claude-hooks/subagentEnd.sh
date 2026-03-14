@@ -1,8 +1,6 @@
 #!/bin/bash
-# Subagent end event
-AGENT_TYPE="${1:-unknown}"
-STATUS="${2:-completed}"
+# Subagent end — POST event to event server (HTTP primary, file fallback)
 curl -s -X POST http://localhost:4010/events \
   -H "Content-Type: application/json" \
-  -d "{\"type\":\"lifecycle:completed\",\"source\":\"hook\",\"timestamp\":$(date +%s000),\"data\":{\"agent\":\"$AGENT_TYPE\",\"status\":\"$STATUS\"}}" \
-  > /dev/null 2>&1 || true
+  -d "{\"type\":\"lifecycle:completed\",\"source\":\"hook\",\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\",\"data\":{\"sessionId\":\"${CLAUDE_SESSION_ID:-unknown}\",\"parentSessionId\":\"${CLAUDE_PARENT_SESSION_ID:-}\",\"type\":\"subagent\"}}" \
+  2>/dev/null || true

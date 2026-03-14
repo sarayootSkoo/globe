@@ -203,21 +203,71 @@ let _processorTimer: ReturnType<typeof setTimeout> | null = null;
 const PROCESS_DEBOUNCE_MS = 1000;
 
 /**
+ * Process the next pending command in the queue without confirmation.
+ * Called when a slot becomes available and autoAdvanceEnabled is true.
+ */
+async function processNextInQueue(): Promise<void> {
+  const $queue = get(agentQueue);
+  const $max = get(maxConcurrent);
+  const $running = getRunningAgentCount();
+
+  if ($running >= $max) return;
+
+  // Queue is priority-sorted; take the first item
+  const nextItem = $queue[0];
+  if (!nextItem) return;
+
+  // Remove from queue before launching to prevent double-processing
+  agentQueue.update(q => q.slice(1));
+
+  await doLaunch(nextItem);
+}
+
+/**
  * Start the reactive queue processor.
  * Watches agentLiveStatuses — when running count drops below max, launches next.
+ * When autoAdvanceEnabled is true, auto-launches without confirmation on agent completion.
  */
 export function startQueueProcessor(): void {
   if (_processorUnsub) return;
 
   if (!_agentLiveStatuses) return;
-  _processorUnsub = _agentLiveStatuses.subscribe(() => {
+
+  let _prevStatuses = new Map<string, { state: string }>();
+
+  _processorUnsub = _agentLiveStatuses.subscribe((statuses) => {
+    // Check if autoAdvanceEnabled: detect agents that just transitioned to 'done'
+    const $autoAdvance = get(autoAdvanceEnabled);
+    if ($autoAdvance) {
+      for (const [sid, status] of statuses) {
+        const prev = _prevStatuses.get(sid);
+        if (prev?.state === 'working' && status.state === 'done') {
+          // An agent just completed — auto-launch next in queue
+          processNextInQueue();
+        }
+      }
+    }
+    _prevStatuses = new Map(statuses);
+
     if (_processorTimer) clearTimeout(_processorTimer);
     _processorTimer = setTimeout(() => {
       _processorTimer = null;
-      // Queue confirmation actions until queue empty or at capacity
-      let queued = true;
-      while (queued) {
-        queued = tryLaunchNext();
+      // Re-read autoAdvanceEnabled at execution time (not closure time)
+      if (get(autoAdvanceEnabled)) {
+        // Auto-advance: directly launch without confirmation until at capacity
+        const $queue = get(agentQueue);
+        const $max = get(maxConcurrent);
+        const $running = getRunningAgentCount();
+        const slotsAvailable = $max - $running;
+        for (let i = 0; i < slotsAvailable && i < $queue.length; i++) {
+          processNextInQueue();
+        }
+      } else {
+        // Manual mode: queue confirmation actions until queue empty or at capacity
+        let queued = true;
+        while (queued) {
+          queued = tryLaunchNext();
+        }
       }
     }, PROCESS_DEBOUNCE_MS);
   });
