@@ -61,6 +61,10 @@
   let loaded = $state(false);
   let wasdPopupVisible = $state(false);
   let crossRepoPanelVisible = $state(false);
+  const _params = new URLSearchParams(window.location.search);
+  let hideConsole = $state(_params.get('console') === 'hide');
+  let hideMenu = $state(_params.get('menu') === 'hide');
+  let hideSearch = $state(_params.get('search') === 'hide');
   let wasdKeys = $state({ w: false, a: false, s: false, d: false, q: false, shift: false });
   let wasdSpeed = $state(0);
   let currentView = $state<ViewMode>('globe');
@@ -134,21 +138,17 @@
 <Corners />
 
 {#if loaded}
-  <!-- Menu Panel — always visible, controls all views -->
-  <MenuPanel oncrossrepopanel={handleCrossRepoPanel} />
+  <!-- Menu Panel -->
+  {#if !hideMenu}
+    <MenuPanel oncrossrepopanel={handleCrossRepoPanel} />
+  {/if}
 
   {#if currentView === 'kanban'}
-    <!-- Globe Preview: render real GlobeCanvas offscreen for frame capture -->
-    {#if isGlobePreview}
-      <div class="globe-offscreen-render">
-        <GlobeCanvas onwasdupdate={handleWasdUpdate} />
-      </div>
-    {/if}
+    <!-- Globe Preview handled by MiniGlobe inside CommandPanel -->
     <!-- HTML Kanban Board -->
     <KanbanBoard />
     <DetailPanel />
     <PreviewOverlay />
-    <IPCStatus />
   {:else if currentView === 'analytics'}
     <!-- Analytics Dashboard (full page) -->
     <AnalyticsDashboard />
@@ -157,23 +157,31 @@
     <GlobeCanvas onwasdupdate={handleWasdUpdate} />
 
     <!-- Banners -->
-    <TopBanner />
-    <ModeBar />
+    {#if !hideConsole}
+      <TopBanner />
+      <ModeBar />
+    {/if}
 
     <!-- Controls -->
-    <TopControls />
-    <GlobeControls onwasdguide={handleWasdGuideOpen} />
+    {#if !hideConsole}
+      <TopControls />
+      <GlobeControls onwasdguide={handleWasdGuideOpen} />
+    {/if}
 
     <!-- Panels -->
-    <LegendPanel />
-    <StatsPanel />
+    {#if !hideConsole}
+      <LegendPanel />
+      <StatsPanel />
+    {/if}
     <DetailPanel />
     <PathPanel />
     <ImpactPanel />
     <CrossRepoPanel visible={crossRepoPanelVisible} onclose={handleCrossRepoPanelClose} />
 
     <!-- Search -->
-    <SearchBox />
+    {#if !hideSearch}
+      <SearchBox />
+    {/if}
 
     <!-- HUD -->
     <WasdHud keys={wasdKeys} speed={wasdSpeed} />
@@ -190,16 +198,3 @@
 
 <KeyboardHelp />
 <KeyboardShortcuts />
-
-<style>
-  /* Globe renders at full resolution but is visually hidden behind kanban.
-     It must NOT be display:none (Three.js won't render) so we use
-     clip + opacity 0 to keep it off-screen but rendering. */
-  .globe-offscreen-render {
-    position: fixed;
-    inset: 0;
-    z-index: 1;
-    opacity: 0;
-    pointer-events: none;
-  }
-</style>

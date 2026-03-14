@@ -4,11 +4,10 @@
   } from '../../lib/stores/commandState';
   import { globePreview } from '../../lib/stores/appState';
   import { navigateTo } from '../../lib/router';
+  import MiniGlobe from './MiniGlobe.svelte';
 
   let isOpen = $state(false);
   let isGlobeOn = $state(false);
-  let miniCanvas: HTMLCanvasElement;
-  let rafId: number | null = null;
 
   $effect(() => {
     const unsub = commandPanelOpen.subscribe(v => { isOpen = v; });
@@ -26,48 +25,6 @@
       globePreview.set(false);
     }
   });
-
-  // Mirror real globe canvas → mini canvas
-  $effect(() => {
-    if (isGlobeOn && miniCanvas) {
-      startMirror();
-    } else {
-      stopMirror();
-    }
-    return () => stopMirror();
-  });
-
-  function startMirror() {
-    stopMirror();
-    const ctx = miniCanvas?.getContext('2d');
-    if (!ctx) return;
-
-    function frame() {
-      const src = document.getElementById('globe-canvas') as HTMLCanvasElement | null;
-      if (src && miniCanvas && ctx) {
-        const w = miniCanvas.width;
-        const h = miniCanvas.height;
-        ctx.clearRect(0, 0, w, h);
-        // Crop center square from fullscreen globe
-        const srcW = src.width;
-        const srcH = src.height;
-        const size = Math.min(srcW, srcH);
-        const sx = (srcW - size) / 2;
-        const sy = (srcH - size) / 2;
-        ctx.drawImage(src, sx, sy, size, size, 0, 0, w, h);
-      }
-      rafId = requestAnimationFrame(frame);
-    }
-    // Small delay to let GlobeCanvas mount and render first frame
-    setTimeout(() => { rafId = requestAnimationFrame(frame); }, 200);
-  }
-
-  function stopMirror() {
-    if (rafId !== null) {
-      cancelAnimationFrame(rafId);
-      rafId = null;
-    }
-  }
 
   function toggleGlobePreview() {
     globePreview.update(v => !v);
@@ -105,14 +62,10 @@
           <span class="menu-badge" class:badge-on={isGlobeOn}>{isGlobeOn ? 'ON' : 'OFF'}</span>
         </button>
 
+        <!-- Globe window: transparent hole that shows the real globe behind -->
         {#if isGlobeOn}
           <div class="globe-box">
-            <canvas
-              bind:this={miniCanvas}
-              class="globe-mini-canvas"
-              width="512"
-              height="512"
-            ></canvas>
+            <MiniGlobe />
             <button class="globe-expand" onclick={switchToGlobe} title="Open full globe view">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
@@ -147,7 +100,6 @@
 {/if}
 
 <style>
-
   .cmd-panel {
     position: fixed;
     top: 0;
@@ -267,7 +219,7 @@
     font-size: 14px;
   }
 
-  /* Globe mini preview */
+  /* Globe mini preview box */
   .globe-box {
     position: relative;
     width: 100%;
@@ -276,14 +228,8 @@
     border-radius: 10px;
     overflow: hidden;
     border: 1px solid rgba(0,229,255,0.2);
-    background: #000;
+    background: #000811;
     box-shadow: inset 0 0 20px rgba(0,229,255,0.04);
-  }
-  .globe-mini-canvas {
-    width: 100%;
-    height: 100%;
-    display: block;
-    border-radius: 9px;
   }
   .globe-expand {
     position: absolute;
@@ -299,6 +245,7 @@
     align-items: center;
     justify-content: center;
     transition: all 0.12s;
+    pointer-events: auto;
   }
   .globe-expand:hover {
     background: rgba(0,229,255,0.15);

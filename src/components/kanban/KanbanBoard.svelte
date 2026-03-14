@@ -1081,16 +1081,6 @@
         </button>
         <button class="analytics-toggle" onclick={() => navigateTo('analytics')} title="Board analytics dashboard">Analytics</button>
         <button class="reset-toggle" onclick={() => showResetConfirm = true} title="Reset board — clear all manual overrides">Reset</button>
-        <button
-          class="terminal-toggle"
-          class:terminal-active={terminalOpen}
-          onclick={() => terminalOpen = !terminalOpen}
-          title={terminalOpen ? 'Close agent terminal' : 'Open agent terminal'}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="4,17 10,11 4,5"/><line x1="12" y1="19" x2="20" y2="19"/>
-          </svg>
-        </button>
         <button class="settings-toggle" onclick={() => settingsOpen = true} title="Settings">&#x2699;</button>
         <button class="shortcut-help-btn" onclick={() => showShortcutHelp = !showShortcutHelp} title="Keyboard shortcuts">?</button>
       </div>
@@ -1599,7 +1589,7 @@
     transition: left 0.15s ease;
   }
   .kanban-overlay.cmd-panel-open {
-    left: 324px; /* 44px menu + 280px command panel */
+    left: 324px;
   }
 
   /* ── Header ──────────────────────────────────────────────────────────── */
