@@ -4,7 +4,6 @@
   } from '../../lib/stores/commandState';
   import { globePreview } from '../../lib/stores/appState';
   import { navigateTo } from '../../lib/router';
-  import MiniGlobe from './MiniGlobe.svelte';
 
   let isOpen = $state(false);
   let isGlobeOn = $state(false);
@@ -19,7 +18,6 @@
     return unsub;
   });
 
-  // When panel closes, turn off globe to save battery
   $effect(() => {
     if (!isOpen && isGlobeOn) {
       globePreview.set(false);
@@ -30,8 +28,15 @@
     globePreview.update(v => !v);
   }
 
+  let globeExpanded = $state(false);
+
+  function toggleGlobeExpand() {
+    globeExpanded = !globeExpanded;
+  }
+
   function switchToGlobe() {
     globePreview.set(false);
+    globeExpanded = false;
     toggleCommandPanel();
     navigateTo('globe');
   }
@@ -52,7 +57,6 @@
     <div class="panel-divider"></div>
 
     <div class="panel-body">
-      <!-- Globe Preview Toggle -->
       <div class="section">
         <button class="menu-item" class:menu-active={isGlobeOn} onclick={toggleGlobePreview}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -62,14 +66,28 @@
           <span class="menu-badge" class:badge-on={isGlobeOn}>{isGlobeOn ? 'ON' : 'OFF'}</span>
         </button>
 
-        <!-- Globe window: transparent hole that shows the real globe behind -->
         {#if isGlobeOn}
-          <div class="globe-box">
-            <MiniGlobe />
-            <button class="globe-expand" onclick={switchToGlobe} title="Open full globe view">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
-              </svg>
+          {#if globeExpanded}
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="globe-backdrop" onclick={toggleGlobeExpand}></div>
+          {/if}
+          <div class="globe-box" class:globe-expanded={globeExpanded}>
+            <iframe
+              src="/?console=hide&menu=hide&search=hide"
+              title="Globe Preview"
+              class="globe-iframe"
+            ></iframe>
+            <button class="globe-expand" onclick={toggleGlobeExpand} title={globeExpanded ? 'Minimize' : 'Expand'}>
+              {#if globeExpanded}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="4,14 4,20 10,20"/><polyline points="20,10 20,4 14,4"/><line x1="14" y1="10" x2="20" y2="4"/><line x1="4" y1="20" x2="10" y2="14"/>
+                </svg>
+              {:else}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="15,3 21,3 21,9"/><polyline points="9,21 3,21 3,15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                </svg>
+              {/if}
             </button>
           </div>
         {/if}
@@ -77,7 +95,6 @@
 
       <div class="section-divider"></div>
 
-      <!-- Quick Navigation -->
       <div class="section">
         <div class="section-label">VIEWS</div>
         <button class="menu-item" onclick={switchToGlobe}>
@@ -155,71 +172,47 @@
     padding: 8px 0;
   }
 
-  .section {
-    padding: 4px 12px;
-  }
+  .section { padding: 4px 12px; }
   .section-label {
-    font-size: 9px;
-    color: #555;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    padding: 8px 8px 6px;
+    font-size: 9px; color: #555; font-weight: 700;
+    letter-spacing: 0.08em; padding: 8px 8px 6px;
   }
   .section-divider {
-    height: 1px;
-    background: rgba(255,255,255,0.04);
-    margin: 4px 12px;
+    height: 1px; background: rgba(255,255,255,0.04); margin: 4px 12px;
   }
 
   .menu-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 10px 12px;
-    background: none;
-    border: none;
-    border-radius: 6px;
-    color: #aaa;
-    font-size: 12px;
-    font-family: inherit;
-    cursor: pointer;
-    transition: all 0.12s;
-    text-align: left;
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 10px 12px; background: none; border: none; border-radius: 6px;
+    color: #aaa; font-size: 12px; font-family: inherit; cursor: pointer;
+    transition: all 0.12s; text-align: left;
   }
-  .menu-item:hover {
-    background: rgba(255,255,255,0.04);
-    color: #e0e0e0;
-  }
-  .menu-active {
-    background: rgba(0,229,255,0.06);
-    color: #00e5ff;
-  }
-  .menu-label {
-    flex: 1;
-    font-weight: 500;
-  }
+  .menu-item:hover { background: rgba(255,255,255,0.04); color: #e0e0e0; }
+  .menu-active { background: rgba(0,229,255,0.06); color: #00e5ff; }
+  .menu-label { flex: 1; font-weight: 500; }
   .menu-badge {
-    font-size: 9px;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 3px;
-    letter-spacing: 0.04em;
-    background: rgba(255,255,255,0.04);
-    color: #555;
-    border: 1px solid rgba(255,255,255,0.08);
+    font-size: 9px; font-weight: 700; padding: 2px 8px; border-radius: 3px;
+    letter-spacing: 0.04em; background: rgba(255,255,255,0.04);
+    color: #555; border: 1px solid rgba(255,255,255,0.08);
   }
-  .badge-on {
-    background: rgba(0,255,136,0.1);
-    color: #00ff88;
-    border-color: rgba(0,255,136,0.3);
+  .badge-on { background: rgba(0,255,136,0.1); color: #00ff88; border-color: rgba(0,255,136,0.3); }
+  .menu-arrow { color: #444; font-size: 14px; }
+
+  /* Globe backdrop (blur behind expanded) */
+  .globe-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 499;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(8px);
+    animation: fadeIn 0.3s ease;
   }
-  .menu-arrow {
-    color: #444;
-    font-size: 14px;
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 
-  /* Globe mini preview box */
+  /* Globe iframe box — mini & expanded */
   .globe-box {
     position: relative;
     width: 100%;
@@ -228,8 +221,32 @@
     border-radius: 10px;
     overflow: hidden;
     border: 1px solid rgba(0,229,255,0.2);
-    background: #000811;
-    box-shadow: inset 0 0 20px rgba(0,229,255,0.04);
+    background: #000;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .globe-box.globe-expanded {
+    position: fixed;
+    top: 10vh;
+    left: 10vw;
+    width: 80vw;
+    height: 80vh;
+    aspect-ratio: auto;
+    margin: 0;
+    border-radius: 14px;
+    border: 1px solid rgba(0,229,255,0.3);
+    z-index: 500;
+    box-shadow: 0 0 60px rgba(0,0,0,0.8), 0 0 20px rgba(0,229,255,0.1);
+  }
+  .globe-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+    border-radius: 9px;
+    transition: border-radius 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .globe-expanded .globe-iframe {
+    border-radius: 13px;
   }
   .globe-expand {
     position: absolute;
@@ -237,19 +254,26 @@
     right: 8px;
     background: rgba(0,0,0,0.6);
     border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 4px;
+    border-radius: 6px;
     color: #ccc;
     cursor: pointer;
-    padding: 4px;
+    padding: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.12s;
-    pointer-events: auto;
+    transition: all 0.15s;
+    z-index: 501;
+    backdrop-filter: blur(8px);
   }
   .globe-expand:hover {
     background: rgba(0,229,255,0.15);
     color: #00e5ff;
     border-color: rgba(0,229,255,0.4);
   }
+  .globe-expanded .globe-expand {
+    top: 16px;
+    right: 16px;
+    padding: 8px;
+  }
+
 </style>

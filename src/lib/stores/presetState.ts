@@ -272,6 +272,7 @@ export function disableAllEffects(): void {
   globe.zoomLevel.set(55);
   glowLevel.set(0);
   activePresetName.set(null);
+  safeSet('presets.active', null);
 }
 
 /** Reset all effect stores to their default values (does not touch presets) */
@@ -283,6 +284,7 @@ export function resetToDefaults(): void {
     }
   }
   activePresetName.set(null);
+  safeSet('presets.active', null);
 }
 
 /** Apply a preset's settings to stores */
@@ -294,6 +296,7 @@ export function applyPreset(preset: Preset): void {
     }
   }
   activePresetName.set(preset.name);
+  safeSet('presets.active', preset.name);
 }
 
 /** Capture current state as a snapshot */
@@ -317,6 +320,7 @@ export function savePreset(name: string): void {
   }
   presets.set([...existing]);
   activePresetName.set(name);
+  safeSet('presets.active', name);
   // Persist custom presets
   safeSet('presets.custom', existing.filter(p => !BUILTIN_PRESETS.some(b => b.name === p.name)));
 }
@@ -333,6 +337,11 @@ export function deletePreset(name: string): void {
 export function initPresets(): void {
   const custom = safeGet<Preset[]>('presets.custom', []);
   presets.set([...BUILTIN_PRESETS, ...custom]);
+  // Restore active preset name
+  const savedActive = safeGet<string | null>('presets.active', null);
+  if (savedActive) {
+    activePresetName.set(savedActive);
+  }
 }
 
 /** Export all custom presets as a JSON string */

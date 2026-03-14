@@ -1,62 +1,41 @@
 /**
- * Secure storage wrapper using @secure-storage/common.
+ * Simple localStorage persistence — plain JSON, no encryption.
  *
- * - All keys are prefixed with `kg_` via the library's prefix config
- * - Values are AES-encrypted before writing to localStorage
- * - All operations are wrapped in try/catch (handles disabled storage,
- *   quota exceeded, SSR environments, private browsing)
+ * All keys are prefixed with `kg:` to namespace this app's data.
+ * All operations are wrapped in try/catch for safety.
  */
 
-import { configure, localStorage as secureStorage } from '@secure-storage/common';
+const PREFIX = 'kg:';
 
-// Initialize secure storage with prefix and encryption secret
-configure({
-  prefix: 'kg',
-  secret: 'knowledge-graph-v1',
-});
-
-/** Read a value from secure storage with fallback on any failure. */
+/** Read a value from localStorage with fallback on any failure. */
 export function safeGet<T>(key: string, fallback: T): T {
   try {
     if (typeof window === 'undefined') return fallback;
-    const raw = window.localStorage.getItem(`kg_${key}`);
+    const raw = window.localStorage.getItem(PREFIX + key);
     if (raw === null) return fallback;
-    // If raw value is not a properly encrypted string, clear and fallback
-    if (typeof raw !== 'string' || raw.length === 0) {
-      window.localStorage.removeItem(`kg_${key}`);
-      return fallback;
-    }
-    // Try plain JSON first (for values written by kanbanDB or non-encrypted)
-    try {
-      const plain = JSON.parse(raw);
-      if (typeof plain === typeof fallback) return plain as T;
-    } catch { /* not plain JSON, try decrypt */ }
-    const val = secureStorage.getItem<T>(key);
-    if (val === null || val === undefined) return fallback;
-    if (typeof val !== typeof fallback) return fallback;
-    return val;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== typeof fallback) return fallback;
+    return parsed as T;
   } catch {
-    // Corrupted or incompatible data — silently remove and return fallback
-    try { window.localStorage.removeItem(`kg_${key}`); } catch { /* ignore */ }
     return fallback;
   }
 }
 
-/** Write a value to secure storage. Silently fails on error. */
+/** Write a value to localStorage. Silently fails on error. */
 export function safeSet(key: string, value: unknown): void {
   try {
     if (typeof window === 'undefined') return;
-    secureStorage.setItem(key, value as any);
-  } catch (e) {
-    console.warn(`[storage] Failed to write "${key}":`, e);
+    window.localStorage.setItem(PREFIX + key, JSON.stringify(value));
+  } catch {
+    // quota exceeded or private browsing — ignore
   }
 }
 
-/** Remove a value from secure storage. */
+/** Remove a value from localStorage. */
 export function safeRemove(key: string): void {
   try {
     if (typeof window === 'undefined') return;
-    secureStorage.removeItem(key);
+    window.localStorage.removeItem(PREFIX + key);
   } catch {
     // ignore
   }
