@@ -111,24 +111,24 @@ export async function pollIPC(): Promise<void> {
 }
 
 /**
- * Start background polling every 2 seconds.
- * Safe to call multiple times — will not create duplicate timers.
+ * Perform a single initial fetch of status.json so the UI shows state right away.
+ * No interval is started — real-time updates are handled by the WebSocket in
+ * agentEventStore. Safe to call multiple times (guarded by pollTimer flag).
  */
 export function startPolling(): void {
   if (pollTimer !== null) return;
-  // Immediate first poll so the UI shows state right away.
+  // Mark as "started" so repeated calls are no-ops.
+  pollTimer = 0 as unknown as ReturnType<typeof setInterval>;
+  // Single initial fetch, then rely on WebSocket for real-time updates.
   void fetchStatus();
-  pollTimer = setInterval(() => { void fetchStatus(); }, POLL_INTERVAL_MS);
 }
 
 /**
- * Stop background polling and reset connection state.
+ * Reset connection state. No-op for the interval (none to clear).
+ * Kept for API compatibility.
  */
 export function stopPolling(): void {
-  if (pollTimer !== null) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
+  pollTimer = null;
   ipcConnected.set(false);
   lastStatusAt = null;
 }

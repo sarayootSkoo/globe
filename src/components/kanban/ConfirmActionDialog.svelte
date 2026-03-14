@@ -105,7 +105,7 @@
     <!-- Footer -->
     <div class="dialog-footer">
       <button class="btn btn-dismiss" onclick={dismissAll}>
-        Dismiss All
+        Hold All
       </button>
       <div class="footer-right">
         <button

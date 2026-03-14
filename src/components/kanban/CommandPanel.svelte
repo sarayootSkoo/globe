@@ -4,9 +4,11 @@
   } from '../../lib/stores/commandState';
   import { globePreview } from '../../lib/stores/appState';
   import { navigateTo } from '../../lib/router';
+  import AgentStage from './AgentStage.svelte';
 
   let isOpen = $state(false);
   let isGlobeOn = $state(false);
+  let isAgentsOn = $state(true);
 
   $effect(() => {
     const unsub = commandPanelOpen.subscribe(v => { isOpen = v; });
@@ -92,6 +94,21 @@
           </div>
         {/if}
       </div>
+
+      <div class="section-divider"></div>
+
+      <!-- Pixel Agent Stage -->
+      <div class="section">
+        <button class="menu-item" class:menu-active={isAgentsOn} onclick={() => isAgentsOn = !isAgentsOn}>
+          <span style="font-size:16px">👾</span>
+          <span class="menu-label">Agent Stage</span>
+          <span class="menu-badge" class:badge-on={isAgentsOn}>{isAgentsOn ? 'ON' : 'OFF'}</span>
+        </button>
+      </div>
+
+      {#if isAgentsOn}
+        <AgentStage />
+      {/if}
 
       <div class="section-divider"></div>
 

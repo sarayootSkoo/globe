@@ -31,6 +31,11 @@ import { kanbanConfig } from './kanbanConfig';
 import type { KanbanConfig } from './kanbanConfig';
 import { DEFAULT_CONFIG } from './kanbanConfig';
 
+// Pixel agents
+import { initPixelAgentSync } from './pixelAgentState';
+
+let pixelAgentUnsub: (() => void) | null = null;
+
 export function initAllStores(): void {
   // Kanban core
   agentAssignments.set(kanbanDB.get('agents', {}) as Record<string, AgentType>);
@@ -58,4 +63,8 @@ export function initAllStores(): void {
   if (storedConfig && Object.keys(storedConfig).length > 0) {
     kanbanConfig.set({ ...DEFAULT_CONFIG, ...storedConfig } as KanbanConfig);
   }
+
+  // Pixel agents — wire agentLiveStatuses → pixelAgents mapping
+  if (pixelAgentUnsub) pixelAgentUnsub();
+  pixelAgentUnsub = initPixelAgentSync();
 }

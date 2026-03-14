@@ -44,13 +44,22 @@
   import { agentQueue, maxConcurrent, autoAdvanceEnabled, startQueueProcessor, stopQueueProcessor } from '../../lib/stores/agentQueue';
   import { startDbSync, stopDbSync, syncFromDb } from '../../lib/stores/kanbanDB';
   import { onMount } from 'svelte';
+  import VoiceCommandBar from './VoiceCommandBar.svelte';
 
   // Max cards to render per column (performance guard)
   const MAX_CARDS_PER_COL = 50;
 
   // Reactive tick — incremented by ALL store subscriptions to force template re-eval
   let _t = $state(0);
-  function tick() { _t = (_t + 1) % 1_000_000; }
+  let _rafPending = false;
+  function tick() {
+    if (_rafPending) return;
+    _rafPending = true;
+    requestAnimationFrame(() => {
+      _t = (_t + 1) % 1_000_000;
+      _rafPending = false;
+    });
+  }
 
   // Store snapshots — updated by subscriptions, read via getters that depend on _t
   let _columns = new Map<KanbanStatus, KanbanCard[]>();
@@ -1573,6 +1582,9 @@
 
 <CommandPanel />
 
+<!-- Voice Command Bar — bottom bar with mic button -->
+<VoiceCommandBar />
+
 <style>
   .kanban-overlay {
     position: fixed;
@@ -1869,6 +1881,7 @@
     flex: 1;
     overflow-x: auto;
     overflow-y: hidden;
+    position: relative;
   }
   .kanban-columns::-webkit-scrollbar {
     height: 6px;

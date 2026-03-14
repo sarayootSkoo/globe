@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { agentLiveStatuses } from '../../lib/stores/agentEventStore';
-  import type { AgentLiveStatus } from '../../lib/types';
+  import { agentStatusByCard } from '../../lib/stores/pixelAgentState';
+  import type { CardAgentStatus } from '../../lib/stores/pixelAgentState';
 
   interface Props {
     nodeId: string;
@@ -8,10 +8,10 @@
 
   let { nodeId }: Props = $props();
 
-  let status = $state<AgentLiveStatus | null>(null);
+  let status = $state<CardAgentStatus | null>(null);
 
   $effect(() => {
-    const unsub = agentLiveStatuses.subscribe(map => {
+    const unsub = agentStatusByCard.subscribe(map => {
       status = map.get(nodeId) ?? null;
     });
     return unsub;

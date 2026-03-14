@@ -374,6 +374,35 @@ export interface CardComment {
   editedAt?: number;
 }
 
+// ── Pixel Agent Types ────────────────────────────────────────────────────────
+
+export type CharacterFSMState = 'idle' | 'walk' | 'type' | 'read';
+
+export type SpeechBubbleType = 'permission' | 'done' | 'error' | 'blocked' | 'voice';
+
+export type VoiceAction =
+  | 'run_command'
+  | 'move_card'
+  | 'pause_agent'
+  | 'resume_agent'
+  | 'create_card'
+  | 'select_card';
+
+export interface VoiceIntent {
+  action: VoiceAction;
+  command?: string;
+  cardQuery?: string;
+  targetColumn?: string;
+  confidence: number;
+}
+
+export interface VoiceMatchCandidate {
+  cardId: string;
+  cardLabel: string;
+  score: number;
+  matchType: 'exact' | 'fuzzy' | 'partial';
+}
+
 // ── Command Registry Types ───────────────────────────────────────────────────
 export interface CommandDef {
   operatesIn: KanbanStatus[];

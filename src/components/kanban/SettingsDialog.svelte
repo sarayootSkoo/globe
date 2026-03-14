@@ -1,11 +1,35 @@
 <script lang="ts">
   import { kanbanConfig, DEFAULT_CONFIG } from '../../lib/stores/kanbanConfig';
   import type { KanbanConfig, ColumnDef, AgentDef, TimingConfig, LimitsConfig, NetworkConfig, AutoConfirmConfig, ProjectDef, LabelDef } from '../../lib/stores/kanbanConfig';
+  import { pixelAgentsEnabled, pixelSoundEnabled, pixelMatrixEnabled, pixelAnimSpeed } from '../../lib/stores/pixelAgentState';
+  import { voiceEnabled, voiceLang, voiceConfirmRequired } from '../../lib/stores/voiceState';
+  import { VoiceEngine } from '../../lib/voice/voiceEngine';
 
   let { onclose }: { onclose: () => void } = $props();
 
   let config = $state<KanbanConfig>(structuredClone(DEFAULT_CONFIG));
-  let activeTab = $state<'projects' | 'labels' | 'columns' | 'agents' | 'timing' | 'limits' | 'network' | 'pipeline' | 'automation' | 'guide'>('projects');
+  let activeTab = $state<'projects' | 'labels' | 'columns' | 'agents' | 'timing' | 'limits' | 'network' | 'pipeline' | 'automation' | 'pixel' | 'guide'>('projects');
+
+  // Pixel Agent local state
+  let _pixelEnabled = $state(true);
+  let _pixelSound = $state(false);
+  let _pixelMatrix = $state(true);
+  let _pixelSpeed = $state(100);
+  let _voiceEnabled = $state(false);
+  let _voiceLang = $state<'th-TH' | 'en-US'>('th-TH');
+  let _voiceConfirm = $state(true);
+  const _voiceSupported = VoiceEngine.isSupported();
+
+  $effect(() => {
+    const u1 = pixelAgentsEnabled.subscribe(v => { _pixelEnabled = v; });
+    const u2 = pixelSoundEnabled.subscribe(v => { _pixelSound = v; });
+    const u3 = pixelMatrixEnabled.subscribe(v => { _pixelMatrix = v; });
+    const u4 = pixelAnimSpeed.subscribe(v => { _pixelSpeed = v; });
+    const u5 = voiceEnabled.subscribe(v => { _voiceEnabled = v; });
+    const u6 = voiceLang.subscribe(v => { _voiceLang = v; });
+    const u7 = voiceConfirmRequired.subscribe(v => { _voiceConfirm = v; });
+    return () => { u1(); u2(); u3(); u4(); u5(); u6(); u7(); };
+  });
   let initialized = false;
 
   // Subscribe to live config
@@ -165,6 +189,7 @@
     { id: 'timing' as const, label: 'Timing', icon: '⏱' },
     { id: 'limits' as const, label: 'Limits', icon: '#' },
     { id: 'network' as const, label: 'Network', icon: '⊕' },
+    { id: 'pixel' as const, label: 'Pixel Agents', icon: '👾' },
     { id: 'guide' as const, label: 'Guide', icon: '?' },
   ];
 </script>
@@ -469,6 +494,90 @@
                   {col.icon} {col.label}
                 </button>
               {/each}
+            </div>
+          </div>
+        </div>
+
+      {:else if activeTab === 'pixel'}
+        <div class="auto-grid">
+          <div class="auto-section">
+            <div class="auto-section-title">Pixel Agent Characters</div>
+            <div class="auto-hint">Animated pixel art characters that visualize agent activity on the kanban board.</div>
+            <div class="auto-row">
+              <div class="auto-info">
+                <span class="auto-label">Show Pixel Agents</span>
+                <span class="auto-desc">Display animated characters on the board for active agents</span>
+              </div>
+              <button class="toggle-btn" class:toggle-on={_pixelEnabled} onclick={() => pixelAgentsEnabled.set(!_pixelEnabled)}>
+                {_pixelEnabled ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            <div class="auto-row">
+              <div class="auto-info">
+                <span class="auto-label">Sound Notifications</span>
+                <span class="auto-desc">Play chime when an agent completes its work</span>
+              </div>
+              <button class="toggle-btn" class:toggle-on={_pixelSound} onclick={() => pixelSoundEnabled.set(!_pixelSound)}>
+                {_pixelSound ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            <div class="auto-row">
+              <div class="auto-info">
+                <span class="auto-label">Matrix Effects</span>
+                <span class="auto-desc">Green digital rain spawn/despawn animation</span>
+              </div>
+              <button class="toggle-btn" class:toggle-on={_pixelMatrix} onclick={() => pixelMatrixEnabled.set(!_pixelMatrix)}>
+                {_pixelMatrix ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            <div class="auto-row">
+              <div class="auto-info">
+                <span class="auto-label">Animation Speed</span>
+                <span class="auto-desc">{_pixelSpeed}%</span>
+              </div>
+              <input type="range" min="50" max="200" step="10" value={_pixelSpeed}
+                     oninput={(e) => pixelAnimSpeed.set(parseInt((e.target as HTMLInputElement).value))}
+                     style="width:120px;accent-color:#00e5ff" />
+            </div>
+          </div>
+
+          <div class="auto-section">
+            <div class="auto-section-title">Voice Commands</div>
+            <div class="auto-hint">
+              {_voiceSupported
+                ? 'Use your voice to command agents. Hold V key or press mic button to speak.'
+                : 'Voice commands not supported in this browser. Use Chrome or Edge.'}
+            </div>
+            <div class="auto-row">
+              <div class="auto-info">
+                <span class="auto-label">Voice Commands</span>
+                <span class="auto-desc">Enable push-to-talk voice control (V key)</span>
+              </div>
+              <button class="toggle-btn" class:toggle-on={_voiceEnabled}
+                      disabled={!_voiceSupported}
+                      onclick={() => voiceEnabled.set(!_voiceEnabled)}>
+                {_voiceEnabled ? 'ON' : 'OFF'}
+              </button>
+            </div>
+            <div class="auto-row">
+              <div class="auto-info">
+                <span class="auto-label">Language</span>
+                <span class="auto-desc">{_voiceLang === 'th-TH' ? 'Thai' : 'English'}</span>
+              </div>
+              <button class="toggle-btn" class:toggle-on={_voiceLang === 'th-TH'}
+                      onclick={() => voiceLang.set(_voiceLang === 'th-TH' ? 'en-US' : 'th-TH')}>
+                {_voiceLang === 'th-TH' ? '🇹🇭 TH' : '🇺🇸 EN'}
+              </button>
+            </div>
+            <div class="auto-row">
+              <div class="auto-info">
+                <span class="auto-label">Require Confirmation</span>
+                <span class="auto-desc">Show confirmation before executing voice commands</span>
+              </div>
+              <button class="toggle-btn" class:toggle-on={_voiceConfirm}
+                      onclick={() => voiceConfirmRequired.set(!_voiceConfirm)}>
+                {_voiceConfirm ? 'CONFIRM' : 'AUTO'}
+              </button>
             </div>
           </div>
         </div>

@@ -4,12 +4,15 @@ import type { KanbanStatus } from '../types';
 
 // ── Command Queue Types ─────────────────────────────────────────────────────
 
+export type CommandSource = 'ui' | 'voice' | 'auto';
+
 export interface QueuedCommand {
   id: string;
   command: string;         // e.g., '/chore'
   args: string;            // e.g., "'path/to/file.md'"
   cardId: string | null;
   status: 'pending' | 'copied' | 'running' | 'completed' | 'failed';
+  source: CommandSource;
   createdAt: number;
   completedAt?: number;
 }
@@ -47,13 +50,14 @@ export const commandHistory = derived(commandQueue, ($q) =>
 
 // ── Actions ─────────────────────────────────────────────────────────────────
 
-export function queueCommand(command: string, args: string, cardId: string | null): QueuedCommand {
+export function queueCommand(command: string, args: string, cardId: string | null, source: CommandSource = 'ui'): QueuedCommand {
   const entry: QueuedCommand = {
     id: `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
     command,
     args,
     cardId,
     status: 'pending',
+    source,
     createdAt: Date.now(),
   };
   commandQueue.update(q => [...q, entry]);
