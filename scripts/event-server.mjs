@@ -1221,6 +1221,11 @@ async function handleRequest(req, res) {
           console.log(`[pty] Prompt ready detected after ${dataChunks} chunks, sending command...`);
           setTimeout(() => {
             try { ptyProc.write(initialPrompt + '\r'); } catch {}
+            // Claude Code shows "Pasted text" for long prompts and waits for Enter
+            // Send extra Enter after a delay to confirm the paste
+            setTimeout(() => {
+              try { ptyProc.write('\r'); } catch {}
+            }, 1500);
           }, 800);
         }
       };
@@ -1231,6 +1236,10 @@ async function handleRequest(req, res) {
           promptSent = true;
           console.log(`[pty] Fallback: sending prompt after 4s timeout (${dataChunks} chunks seen)`);
           try { ptyProc.write(initialPrompt + '\r'); } catch {}
+          // Extra Enter for paste confirmation
+          setTimeout(() => {
+            try { ptyProc.write('\r'); } catch {}
+          }, 1500);
         }
       }, 4000);
     }

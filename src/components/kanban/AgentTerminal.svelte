@@ -396,10 +396,14 @@
         </div>
       </div>
     {:else if activeTab && ptyMap.has(activeTab)}
-      <!-- PTY session: render full xterm.js terminal -->
-      <div class="terminal-body xterm-body">
-        <XtermTerminal sessionId={ptyMap.get(activeTab) ?? ''} cardId={activeTab} />
-      </div>
+      <!-- PTY sessions: keep ALL alive, show/hide with CSS to preserve output -->
+      {#each sessions() as key (key)}
+        {#if ptyMap.has(key)}
+          <div class="terminal-body xterm-body" style="display: {activeTab === key ? 'block' : 'none'}">
+            <XtermTerminal sessionId={ptyMap.get(key) ?? ''} cardId={key} />
+          </div>
+        {/if}
+      {/each}
     {:else if activeTab}
       <div class="terminal-body" bind:this={bodyEl}>
         {#if visibleLines(activeTab).length === 0}

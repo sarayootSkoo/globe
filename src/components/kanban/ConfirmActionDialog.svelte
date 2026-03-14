@@ -4,6 +4,42 @@
     toggleAction, toggleAll, confirmChecked, confirmAll, dismissAll, removeAction,
     type PendingAction,
   } from '../../lib/stores/actionConfirm';
+  import { KANBAN_COLUMNS, moveCard } from '../../lib/stores/kanbanState';
+  import type { KanbanStatus } from '../../lib/types';
+
+  // Track "move to" column overrides per action
+  let moveTargets = $state<Map<string, KanbanStatus>>(new Map());
+
+  function setMoveTarget(actionId: string, column: KanbanStatus) {
+    const next = new Map(moveTargets);
+    next.set(actionId, column);
+    moveTargets = next;
+  }
+
+  async function handleConfirmCheckedWithMove() {
+    // Apply any "move to" overrides before confirming
+    for (const action of actions) {
+      if (action.checked) {
+        const target = moveTargets.get(action.id);
+        if (target) {
+          moveCard(action.cardId, target);
+        }
+      }
+    }
+    await confirmChecked();
+    moveTargets = new Map();
+  }
+
+  async function handleConfirmAllWithMove() {
+    for (const action of actions) {
+      const target = moveTargets.get(action.id);
+      if (target) {
+        moveCard(action.cardId, target);
+      }
+    }
+    await confirmAll();
+    moveTargets = new Map();
+  }
 
   let open = $state(false);
   let actions = $state<PendingAction[]>([]);
@@ -93,6 +129,19 @@
               <span class="action-desc">{action.description}</span>
             </div>
           </label>
+          <select
+            class="move-select"
+            value={moveTargets.get(action.id) ?? ''}
+            onchange={(e) => {
+              const val = (e.target as HTMLSelectElement).value;
+              if (val) setMoveTarget(action.id, val as KanbanStatus);
+            }}
+          >
+            <option value="">Move to...</option>
+            {#each KANBAN_COLUMNS as col}
+              <option value={col.id}>{col.icon} {col.label}</option>
+            {/each}
+          </select>
           <button
             class="btn-remove"
             onclick={() => removeAction(action.id)}
@@ -111,13 +160,13 @@
         <button
           class="btn btn-confirm-selected"
           disabled={!someChecked}
-          onclick={handleConfirmChecked}
+          onclick={handleConfirmCheckedWithMove}
         >
           Confirm Selected ({checkedCount})
         </button>
         <button
           class="btn btn-confirm-all"
-          onclick={handleConfirmAll}
+          onclick={handleConfirmAllWithMove}
         >
           Confirm All
         </button>
@@ -328,6 +377,27 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .move-select {
+    font-size: 9px;
+    font-family: inherit;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 4px;
+    color: #888;
+    padding: 3px 6px;
+    cursor: pointer;
+    flex-shrink: 0;
+    max-width: 110px;
+    outline: none;
+  }
+  .move-select:hover {
+    border-color: rgba(0,229,255,0.3);
+    color: #aaa;
+  }
+  .move-select:focus {
+    border-color: rgba(0,229,255,0.4);
   }
 
   .btn-remove {
